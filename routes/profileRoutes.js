@@ -7,6 +7,7 @@ const StudentProfile = require('../models/StudentProfile');
 const ScoreBoosterTask = require('../models/ScoreBoosterTask');
 const ScoreHistory = require('../models/ScoreHistory');
 const { parseResumeWithGemini } = require('../services/geminiParser');
+const { parseResumeWithAI } = require('../services/aiParsingService');
 const { calculateInitialScore, generateInitialBoosterTasks } = require('../services/verificationService');
 
 // Multer in-memory storage configuration for handling PDF uploads
@@ -30,56 +31,75 @@ const upload = multer({
  * @access  Public / Student
  */
 router.post('/parse-resume', upload.single('resume'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: 'No resume file uploaded. Please upload a PDF file.',
-      });
-    }
-
-    console.log(`[Resume Parse] Processing PDF: ${req.file.originalname} (${req.file.size} bytes)`);
-
-    // 1. Extract text from uploaded PDF buffer
-    let pdfData;
-    try {
-      pdfData = await pdfParse(req.file.buffer);
-    } catch (parseErr) {
-      console.error('[pdf-parse Error]', parseErr.message);
-      return res.status(422).json({
-        success: false,
-        message: 'Failed to extract text from the PDF file. The file may be password-protected or corrupt.',
-        error: parseErr.message,
-      });
-    }
-
-    const rawText = pdfData.text || '';
-    if (rawText.trim().length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'The uploaded PDF contains no readable text. (Scanned image resumes require OCR).',
-      });
-    }
-
-    console.log(`[Resume Parse] Extracted ${rawText.length} characters of text. Invoking Gemini API...`);
-
-    // 2. Pass text to Gemini API for entity extraction & claim structured mapping
-    const structuredProfile = await parseResumeWithGemini(rawText);
-    structuredProfile.resumeFileName = req.file.originalname;
-
-    return res.status(200).json({
-      success: true,
-      message: 'Resume parsed and claims extracted successfully',
-      data: structuredProfile,
-    });
-  } catch (error) {
-    console.error('[Parse-Resume Error]', error);
-    return res.status(500).json({
+  // --- Guard: file presence ---
+  if (!req.file) {
+    return res.status(400).json({
       success: false,
-      message: 'An error occurred while parsing the resume.',
-      error: error.message,
+      message: 'No resume file uploaded. Please attach a PDF file under the field name "resume".',
     });
   }
+
+  // --- Guard: MIME type (belt-and-suspenders beyond multer fileFilter) ---
+  if (
+    req.file.mimetype !== 'application/pdf' &&
+    !req.file.originalname.toLowerCase().endsWith('.pdf')
+  ) {
+    return res.status(415).json({
+      success: false,
+      message: 'Invalid file format. Only PDF resume files are accepted.',
+    });
+  }
+
+  console.log(`[Resume Parse] Processing PDF: ${req.file.originalname} (${req.file.size} bytes)`);
+
+  // --- Step 1: Extract raw text from the PDF buffer ---
+  let rawText;
+  try {
+    const pdfData = await pdfParse(req.file.buffer);
+    rawText = pdfData.text || '';
+  } catch (parseErr) {
+    console.error('[pdf-parse Error]', parseErr.message);
+    return res.status(422).json({
+      success: false,
+      message:
+        'Failed to extract text from the uploaded PDF. The file may be password-protected, corrupted, or not a valid PDF.',
+      error: parseErr.message,
+    });
+  }
+
+  if (rawText.trim().length === 0) {
+    return res.status(400).json({
+      success: false,
+      message:
+        'The uploaded PDF contains no extractable text. Scanned image-based resumes are not supported — please upload a text-based PDF.',
+    });
+  }
+
+  console.log(
+    `[Resume Parse] Extracted ${rawText.length} characters of text. Invoking AI parsing service...`
+  );
+
+  // --- Step 2: Parse extracted text with AI ---
+  let extractedData;
+  try {
+    extractedData = await parseResumeWithAI(rawText);
+  } catch (aiErr) {
+    console.error('[AI Parsing Error]', aiErr.message);
+    return res.status(502).json({
+      success: false,
+      message: 'The AI parsing service failed to process the resume. Please try again later.',
+      error: aiErr.message,
+    });
+  }
+
+  console.log(`[Resume Parse] AI extraction complete for: ${req.file.originalname}`);
+
+  // --- Step 3: Return success response ---
+  return res.status(200).json({
+    message: 'Resume parsed successfully',
+    rawText,
+    extractedData,
+  });
 });
 
 /**
