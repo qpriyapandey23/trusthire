@@ -42,7 +42,8 @@ app.get('/', (req, res) => {
     endpoints: {
       health: '/api/health',
       parseResume: 'POST /api/profile/parse-resume',
-      confirmProfile: 'POST /api/profile/confirm',
+      confirmProfile: 'POST /api/profile/confirm-profile',
+      confirm: 'POST /api/profile/confirm',
       getProfile: 'GET /api/profile/user/:userId',
     },
   });
@@ -60,7 +61,25 @@ app.get('/api/health', (req, res) => {
 const profileRoutes = require('./routes/profileRoutes');
 app.use('/api/profile', profileRoutes);
 
-// 404 Route Handler
+// Serve Static Frontend Assets (if built)
+const path = require('path');
+const fs = require('fs');
+const distPath = path.join(__dirname, 'dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) {
+      return next();
+    }
+    const indexPath = path.join(distPath, 'index.html');
+    if (fs.existsSync(indexPath)) {
+      return res.sendFile(indexPath);
+    }
+    next();
+  });
+}
+
+// 404 Route Handler for unmatched API routes
 app.use((req, res) => {
   res.status(404).json({
     success: false,

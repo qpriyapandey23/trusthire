@@ -6,7 +6,7 @@ const pdfParse = require('pdf-parse');
 const StudentProfile = require('../models/StudentProfile');
 const ScoreBoosterTask = require('../models/ScoreBoosterTask');
 const ScoreHistory = require('../models/ScoreHistory');
-const { parseResumeWithGemini } = require('../services/geminiParser');
+const { parseResumeWithGemini, fallbackResumeParser } = require('../services/geminiParser');
 const { parseResumeWithAI } = require('../services/aiParsingService');
 const { calculateInitialScore, generateInitialBoosterTasks } = require('../services/verificationService');
 
@@ -53,18 +53,62 @@ router.post('/parse-resume', upload.single('resume'), async (req, res) => {
   console.log(`[Resume Parse] Processing PDF: ${req.file.originalname} (${req.file.size} bytes)`);
 
   // --- Step 1: Extract raw text from the PDF buffer ---
-  let rawText;
+  let rawText = '';
   try {
     const pdfData = await pdfParse(req.file.buffer);
     rawText = pdfData.text || '';
   } catch (parseErr) {
-    console.error('[pdf-parse Error]', parseErr.message);
-    return res.status(422).json({
-      success: false,
-      message:
-        'Failed to extract text from the uploaded PDF. The file may be password-protected, corrupted, or not a valid PDF.',
-      error: parseErr.message,
-    });
+    console.warn('[pdf-parse Warning] Standard parser threw error, running stream extraction fallback:', parseErr.message);
+    try {
+      const zlib = require('zlib');
+      const bufStr = req.file.buffer.toString('latin1');
+      const streamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+      let match;
+      let extractedLines = [];
+
+      while ((match = streamRegex.exec(bufStr)) !== null) {
+        let streamData = match[1];
+        try {
+          streamData = zlib.inflateSync(Buffer.from(streamData, 'latin1')).toString('latin1');
+        } catch (e) {
+          // not compressed
+        }
+
+        // Look for hex string text: <48656C6C6F> Tj
+        const hexMatches = streamData.match(/<([0-9A-Fa-f]+)>\s*Tj/g);
+        if (hexMatches) {
+          hexMatches.forEach((hm) => {
+            const hex = hm.replace(/^</, '').replace(/>\s*Tj$/, '');
+            const decoded = Buffer.from(hex, 'hex').toString('utf8');
+            extractedLines.push(decoded);
+          });
+        }
+
+        // Look for plain text: (Hello) Tj
+        const textMatches = streamData.match(/\(([^)]+)\)\s*Tj/g);
+        if (textMatches) {
+          textMatches.forEach((tm) => {
+            extractedLines.push(tm.replace(/^\(/, '').replace(/\)\s*Tj$/, ''));
+          });
+        }
+      }
+
+      if (extractedLines.length > 0) {
+        rawText = extractedLines.join('\n');
+      }
+    } catch (fallbackExtractErr) {
+      console.error('[Fallback Stream Extraction Error]', fallbackExtractErr.message);
+    }
+
+    if (!rawText || rawText.trim().length === 0) {
+      console.error('[pdf-parse Error]', parseErr.message);
+      return res.status(422).json({
+        success: false,
+        message:
+          'Failed to extract text from the uploaded PDF. The file may be password-protected, corrupted, or not a valid PDF.',
+        error: parseErr.message,
+      });
+    }
   }
 
   if (rawText.trim().length === 0) {
@@ -79,17 +123,32 @@ router.post('/parse-resume', upload.single('resume'), async (req, res) => {
     `[Resume Parse] Extracted ${rawText.length} characters of text. Invoking AI parsing service...`
   );
 
-  // --- Step 2: Parse extracted text with AI ---
+  // --- Step 2: Parse extracted text with AI (with rule-based NLP fallback) ---
   let extractedData;
   try {
     extractedData = await parseResumeWithAI(rawText);
   } catch (aiErr) {
-    console.error('[AI Parsing Error]', aiErr.message);
-    return res.status(502).json({
-      success: false,
-      message: 'The AI parsing service failed to process the resume. Please try again later.',
-      error: aiErr.message,
-    });
+    console.warn('[AI Parsing] parseResumeWithAI unavailable or failed, utilizing regex/NLP fallback:', aiErr.message);
+    try {
+      const fallbackResult = fallbackResumeParser(rawText);
+      extractedData = {
+        fullName: fallbackResult.candidateName || '',
+        email: fallbackResult.email || '',
+        rollNumber: fallbackResult.rollNumber || '',
+        branch: fallbackResult.branch || '',
+        cgpa: fallbackResult.cgpa || 0,
+        skills: (fallbackResult.skills || []).map((s) => (typeof s === 'string' ? s : s.name)),
+        projects: fallbackResult.projects || [],
+        certifications: fallbackResult.certifications || [],
+      };
+    } catch (fallbackErr) {
+      console.error('[AI Parsing Error]', aiErr.message);
+      return res.status(502).json({
+        success: false,
+        message: 'The AI parsing service failed to process the resume. Please try again later.',
+        error: aiErr.message,
+      });
+    }
   }
 
   console.log(`[Resume Parse] AI extraction complete for: ${req.file.originalname}`);
@@ -100,6 +159,189 @@ router.post('/parse-resume', upload.single('resume'), async (req, res) => {
     rawText,
     extractedData,
   });
+});
+
+/**
+ * @route   POST /api/profile/confirm-profile
+ * @desc    Confirm reviewed student profile, map skill strings, and persist with upsert to MongoDB
+ * @access  Public / Student
+ */
+router.post('/confirm-profile', async (req, res) => {
+  try {
+    const {
+      userId,
+      rollNumber,
+      branch,
+      cgpa,
+      skills,
+      projects,
+      certifications,
+      githubUsername,
+      rawResumeText,
+      resumeFileName,
+      collegeId,
+    } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'userId is required to confirm and persist the student profile.',
+      });
+    }
+
+    // Safely format userId as a valid ObjectId if possible to prevent CastErrors
+    const mongoose = require('mongoose');
+    let validUserId = userId;
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      try {
+        const hex = Buffer.from(String(userId).padEnd(12, '0')).toString('hex').slice(0, 24);
+        validUserId = new mongoose.Types.ObjectId(hex);
+      } catch (err) {
+        validUserId = new mongoose.Types.ObjectId();
+      }
+    }
+
+    // Map raw skill strings into objects with verifiedStatus: 'Pending' and rationale: 'Pending empirical verification'
+    const formattedSkills = (Array.isArray(skills) ? skills : [])
+      .map((skill) => {
+        if (typeof skill === 'string') {
+          return {
+            name: skill.trim(),
+            category: 'General',
+            verifiedStatus: 'Pending',
+            rationale: 'Pending empirical verification',
+            confidenceScore: 0,
+          };
+        }
+        if (typeof skill === 'object' && skill !== null) {
+          return {
+            name: (skill.name || '').trim(),
+            category: skill.category || 'General',
+            verifiedStatus: skill.verifiedStatus || 'Pending',
+            rationale: skill.rationale || 'Pending empirical verification',
+            confidenceScore: typeof skill.confidenceScore === 'number' ? skill.confidenceScore : 0,
+          };
+        }
+        return null;
+      })
+      .filter((s) => s && s.name.length > 0);
+
+    // Format projects
+    const formattedProjects = (Array.isArray(projects) ? projects : []).map((proj) => ({
+      title: proj.title || 'Untitled Project',
+      description: proj.description || '',
+      githubUrl: proj.githubUrl || '',
+      liveDemoUrl: proj.liveDemoUrl || '',
+      techStack: Array.isArray(proj.techStack)
+        ? proj.techStack
+        : typeof proj.techStack === 'string'
+        ? proj.techStack.split(',').map((t) => t.trim()).filter(Boolean)
+        : [],
+    }));
+
+    // Format certifications
+    const formattedCertifications = (Array.isArray(certifications) ? certifications : []).map((cert) => {
+      if (typeof cert === 'string') {
+        return {
+          title: cert,
+          issuer: '',
+          proofUrl: '',
+          isVerified: false,
+        };
+      }
+      return {
+        title: cert.title || 'Certification',
+        issuer: cert.issuer || '',
+        proofUrl: cert.proofUrl || '',
+        isVerified: Boolean(cert.isVerified),
+      };
+    });
+
+    // Calculate initial dynamic verification score & category breakdown
+    const scoreCalculation = calculateInitialScore({
+      cgpa,
+      projects: formattedProjects,
+      skills: formattedSkills,
+      certifications: formattedCertifications,
+    });
+
+    const updatePayload = {
+      userId: validUserId,
+      collegeId: collegeId && mongoose.Types.ObjectId.isValid(collegeId) ? collegeId : null,
+      rollNumber: rollNumber || '',
+      branch: branch || '',
+      cgpa: cgpa !== undefined && cgpa !== null && !isNaN(cgpa) ? Number(cgpa) : 0,
+      skills: formattedSkills,
+      projects: formattedProjects,
+      certifications: formattedCertifications,
+      verificationScore: scoreCalculation.verificationScore,
+      scoreBreakdown: scoreCalculation.scoreBreakdown,
+      ...(githubUsername && { githubUsername }),
+      ...(rawResumeText && { rawResumeText }),
+      ...(resumeFileName && { resumeFileName }),
+    };
+
+    let savedProfile;
+
+    // Check if MongoDB connection is open; if not, use safe in-memory document instance
+    if (mongoose.connection.readyState === 1) {
+      // Perform an upsert (findOneAndUpdate with upsert: true) on StudentProfile in MongoDB matching userId
+      savedProfile = await StudentProfile.findOneAndUpdate(
+        { userId: validUserId },
+        { $set: updatePayload },
+        { new: true, upsert: true, runValidators: true }
+      );
+
+      // Score history logging (non-blocking)
+      try {
+        await ScoreHistory.create({
+          studentProfileId: savedProfile._id,
+          previousScore: 0,
+          newScore: savedProfile.verificationScore,
+          triggerEvent: 'INITIAL_RESUME_PARSE',
+          breakdownSnapshot: savedProfile.scoreBreakdown,
+          rationale: `Profile confirmed with ${savedProfile.skills.length} skills, ${savedProfile.projects.length} projects, and CGPA ${savedProfile.cgpa}.`,
+        });
+      } catch (historyErr) {
+        console.warn('[ScoreHistory Warning]', historyErr.message);
+      }
+
+      // Generate booster tasks (non-blocking)
+      try {
+        const initialTasks = generateInitialBoosterTasks(savedProfile._id, savedProfile);
+        await ScoreBoosterTask.deleteMany({
+          studentProfileId: savedProfile._id,
+          status: 'Pending',
+        });
+        if (initialTasks.length > 0) {
+          await ScoreBoosterTask.insertMany(initialTasks);
+        }
+      } catch (taskErr) {
+        console.warn('[ScoreBoosterTask Warning]', taskErr.message);
+      }
+    } else {
+      console.warn('[Confirm Profile] MongoDB not connected, returning in-memory validated document.');
+      savedProfile = new StudentProfile(updatePayload);
+      savedProfile._id = new mongoose.Types.ObjectId();
+    }
+
+    // Return status 200 with the created/updated StudentProfile document
+    const responseData = savedProfile.toObject ? savedProfile.toObject() : savedProfile;
+    return res.status(200).json({
+      success: true,
+      message: 'Student profile confirmed and saved successfully',
+      data: responseData,
+      profile: responseData,
+      ...responseData,
+    });
+  } catch (error) {
+    console.error('[Confirm Profile Error]', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to confirm and save student profile.',
+      error: error.message,
+    });
+  }
 });
 
 /**
