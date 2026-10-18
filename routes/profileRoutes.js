@@ -1,13 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const pdfParse = require('pdf-parse');
 
 const StudentProfile = require('../models/StudentProfile');
 const ScoreBoosterTask = require('../models/ScoreBoosterTask');
 const ScoreHistory = require('../models/ScoreHistory');
-const { parseResumeWithGemini, fallbackResumeParser } = require('../services/geminiParser');
 const { parseResumeWithAI } = require('../services/aiParsingService');
+const { extractSpatialText, extractDeterministicAnchors } = require('../services/spatialPdfService');
+const { normalizeAndCategorizeSkills } = require('../services/skillNormalizer');
 const { calculateInitialScore, generateInitialBoosterTasks } = require('../services/verificationService');
 
 // Multer in-memory storage configuration for handling PDF uploads
@@ -27,7 +27,8 @@ const upload = multer({
 
 /**
  * @route   POST /api/profile/parse-resume
- * @desc    Upload PDF resume, extract text with pdf-parse, and analyze with Gemini API / NLP
+ * @desc    Upload PDF resume, execute spatial layout & coordinate reconstruction,
+ *          run regex deterministic filtering, and parse with Gemini 1.5 Flash / strict JSON schema
  * @access  Public / Student
  */
 router.post('/parse-resume', upload.single('resume'), async (req, res) => {
@@ -39,7 +40,7 @@ router.post('/parse-resume', upload.single('resume'), async (req, res) => {
     });
   }
 
-  // --- Guard: MIME type (belt-and-suspenders beyond multer fileFilter) ---
+  // --- Guard: MIME type ---
   if (
     req.file.mimetype !== 'application/pdf' &&
     !req.file.originalname.toLowerCase().endsWith('.pdf')
@@ -52,65 +53,21 @@ router.post('/parse-resume', upload.single('resume'), async (req, res) => {
 
   console.log(`[Resume Parse] Processing PDF: ${req.file.originalname} (${req.file.size} bytes)`);
 
-  // --- Step 1: Extract raw text from the PDF buffer ---
-  let rawText = '';
+  // --- Step 1: Spatial Text Extraction & Layout Pre-Processing ---
+  let spatialResult;
   try {
-    const pdfData = await pdfParse(req.file.buffer);
-    rawText = pdfData.text || '';
-  } catch (parseErr) {
-    console.warn('[pdf-parse Warning] Standard parser threw error, running stream extraction fallback:', parseErr.message);
-    try {
-      const zlib = require('zlib');
-      const bufStr = req.file.buffer.toString('latin1');
-      const streamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
-      let match;
-      let extractedLines = [];
-
-      while ((match = streamRegex.exec(bufStr)) !== null) {
-        let streamData = match[1];
-        try {
-          streamData = zlib.inflateSync(Buffer.from(streamData, 'latin1')).toString('latin1');
-        } catch (e) {
-          // not compressed
-        }
-
-        // Look for hex string text: <48656C6C6F> Tj
-        const hexMatches = streamData.match(/<([0-9A-Fa-f]+)>\s*Tj/g);
-        if (hexMatches) {
-          hexMatches.forEach((hm) => {
-            const hex = hm.replace(/^</, '').replace(/>\s*Tj$/, '');
-            const decoded = Buffer.from(hex, 'hex').toString('utf8');
-            extractedLines.push(decoded);
-          });
-        }
-
-        // Look for plain text: (Hello) Tj
-        const textMatches = streamData.match(/\(([^)]+)\)\s*Tj/g);
-        if (textMatches) {
-          textMatches.forEach((tm) => {
-            extractedLines.push(tm.replace(/^\(/, '').replace(/\)\s*Tj$/, ''));
-          });
-        }
-      }
-
-      if (extractedLines.length > 0) {
-        rawText = extractedLines.join('\n');
-      }
-    } catch (fallbackExtractErr) {
-      console.error('[Fallback Stream Extraction Error]', fallbackExtractErr.message);
-    }
-
-    if (!rawText || rawText.trim().length === 0) {
-      console.error('[pdf-parse Error]', parseErr.message);
-      return res.status(422).json({
-        success: false,
-        message:
-          'Failed to extract text from the uploaded PDF. The file may be password-protected, corrupted, or not a valid PDF.',
-        error: parseErr.message,
-      });
-    }
+    spatialResult = await extractSpatialText(req.file.buffer);
+  } catch (extractErr) {
+    console.error('[Spatial Extract Error]', extractErr.message);
+    return res.status(422).json({
+      success: false,
+      message:
+        'Failed to extract spatial text from the uploaded PDF. The file may be password-protected or corrupt.',
+      error: extractErr.message,
+    });
   }
 
+  const rawText = spatialResult.spatiallyReconstructedText || '';
   if (rawText.trim().length === 0) {
     return res.status(400).json({
       success: false,
@@ -120,42 +77,37 @@ router.post('/parse-resume', upload.single('resume'), async (req, res) => {
   }
 
   console.log(
-    `[Resume Parse] Extracted ${rawText.length} characters of text. Invoking AI parsing service...`
+    `[Resume Parse] Spatial layout analysis complete (${spatialResult.spatialMetadata.extractionMethod}, pages: ${spatialResult.spatialMetadata.numPages}, multi-column: ${spatialResult.spatialMetadata.hasMultiColumn}). Invoking AI parser...`
   );
 
-  // --- Step 2: Parse extracted text with AI (with rule-based NLP fallback) ---
+  // --- Step 2: Contextual Entity Extraction via Gemini 1.5 Flash (with strict JSON schema & spatial anchors) ---
   let extractedData;
   try {
-    extractedData = await parseResumeWithAI(rawText);
+    extractedData = await parseResumeWithAI(rawText, spatialResult.anchors);
   } catch (aiErr) {
-    console.warn('[AI Parsing] parseResumeWithAI unavailable or failed, utilizing regex/NLP fallback:', aiErr.message);
-    try {
-      const fallbackResult = fallbackResumeParser(rawText);
-      extractedData = {
-        fullName: fallbackResult.candidateName || '',
-        email: fallbackResult.email || '',
-        rollNumber: fallbackResult.rollNumber || '',
-        branch: fallbackResult.branch || '',
-        cgpa: fallbackResult.cgpa || 0,
-        skills: (fallbackResult.skills || []).map((s) => (typeof s === 'string' ? s : s.name)),
-        projects: fallbackResult.projects || [],
-        certifications: fallbackResult.certifications || [],
-      };
-    } catch (fallbackErr) {
-      console.error('[AI Parsing Error]', aiErr.message);
-      return res.status(502).json({
-        success: false,
-        message: 'The AI parsing service failed to process the resume. Please try again later.',
-        error: aiErr.message,
-      });
-    }
+    console.error('[AI Parsing Fatal Error]', aiErr.message);
+    return res.status(502).json({
+      success: false,
+      message: 'The AI parsing engine failed to process the resume.',
+      error: aiErr.message,
+    });
   }
 
-  console.log(`[Resume Parse] AI extraction complete for: ${req.file.originalname}`);
+  // --- Step 3: Canonical Skill Normalization & Empirical Project Cross-Referencing ---
+  const normalizedSkills = normalizeAndCategorizeSkills(
+    extractedData.skills || [],
+    extractedData.projects || []
+  );
+  extractedData.skills = normalizedSkills;
 
-  // --- Step 3: Return success response ---
+  console.log(`[Resume Parse] Extraction and skill canonicalization complete for: ${req.file.originalname}`);
+
+  // --- Step 4: Return Success Payload ---
   return res.status(200).json({
-    message: 'Resume parsed successfully',
+    success: true,
+    message: 'Resume parsed successfully with spatial reconstruction and AI validation',
+    spatialMetadata: spatialResult.spatialMetadata,
+    anchors: spatialResult.anchors,
     rawText,
     extractedData,
   });
@@ -163,7 +115,7 @@ router.post('/parse-resume', upload.single('resume'), async (req, res) => {
 
 /**
  * @route   POST /api/profile/confirm-profile
- * @desc    Confirm reviewed student profile, map skill strings, and persist with upsert to MongoDB
+ * @desc    Confirm reviewed student profile, canonicalize skills into taxonomy, and persist with upsert to MongoDB
  * @access  Public / Student
  */
 router.post('/confirm-profile', async (req, res) => {
@@ -201,31 +153,6 @@ router.post('/confirm-profile', async (req, res) => {
       }
     }
 
-    // Map raw skill strings into objects with verifiedStatus: 'Pending' and rationale: 'Pending empirical verification'
-    const formattedSkills = (Array.isArray(skills) ? skills : [])
-      .map((skill) => {
-        if (typeof skill === 'string') {
-          return {
-            name: skill.trim(),
-            category: 'General',
-            verifiedStatus: 'Pending',
-            rationale: 'Pending empirical verification',
-            confidenceScore: 0,
-          };
-        }
-        if (typeof skill === 'object' && skill !== null) {
-          return {
-            name: (skill.name || '').trim(),
-            category: skill.category || 'General',
-            verifiedStatus: skill.verifiedStatus || 'Pending',
-            rationale: skill.rationale || 'Pending empirical verification',
-            confidenceScore: typeof skill.confidenceScore === 'number' ? skill.confidenceScore : 0,
-          };
-        }
-        return null;
-      })
-      .filter((s) => s && s.name.length > 0);
-
     // Format projects
     const formattedProjects = (Array.isArray(projects) ? projects : []).map((proj) => ({
       title: proj.title || 'Untitled Project',
@@ -238,6 +165,9 @@ router.post('/confirm-profile', async (req, res) => {
         ? proj.techStack.split(',').map((t) => t.trim()).filter(Boolean)
         : [],
     }));
+
+    // Normalize and categorize skills into strict taxonomy with empirical cross-referencing
+    const formattedSkills = normalizeAndCategorizeSkills(skills || [], formattedProjects);
 
     // Format certifications
     const formattedCertifications = (Array.isArray(certifications) ? certifications : []).map((cert) => {
@@ -372,11 +302,27 @@ router.post('/confirm', async (req, res) => {
       });
     }
 
+    // Format projects
+    const formattedProjects = (Array.isArray(projects) ? projects : []).map((proj) => ({
+      title: proj.title || 'Untitled Project',
+      description: proj.description || '',
+      githubUrl: proj.githubUrl || '',
+      liveDemoUrl: proj.liveDemoUrl || '',
+      techStack: Array.isArray(proj.techStack)
+        ? proj.techStack
+        : typeof proj.techStack === 'string'
+        ? proj.techStack.split(',').map((t) => t.trim()).filter(Boolean)
+        : [],
+    }));
+
+    // Normalize and categorize skills into strict taxonomy with empirical cross-referencing
+    const formattedSkills = normalizeAndCategorizeSkills(skills || [], formattedProjects);
+
     // 1. Calculate transparent dynamic verification score
     const scoreCalculation = calculateInitialScore({
       cgpa,
-      projects,
-      skills,
+      projects: formattedProjects,
+      skills: formattedSkills,
       certifications,
     });
 
@@ -387,8 +333,8 @@ router.post('/confirm', async (req, res) => {
       branch: branch || '',
       cgpa: cgpa ? Number(cgpa) : 0,
       githubUsername: githubUsername || '',
-      skills: Array.isArray(skills) ? skills : [],
-      projects: Array.isArray(projects) ? projects : [],
+      skills: formattedSkills,
+      projects: formattedProjects,
       certifications: Array.isArray(certifications) ? certifications : [],
       verificationScore: scoreCalculation.verificationScore,
       scoreBreakdown: scoreCalculation.scoreBreakdown,
@@ -396,38 +342,52 @@ router.post('/confirm', async (req, res) => {
       resumeFileName: resumeFileName || '',
     };
 
-    // 2. Upsert Student Profile
-    const existingProfile = await StudentProfile.findOne({ userId });
-    const previousScore = existingProfile ? existingProfile.verificationScore : 0;
-
-    const savedProfile = await StudentProfile.findOneAndUpdate(
-      { userId },
-      updatePayload,
-      { new: true, upsert: true, runValidators: true }
-    );
-
-    // 3. Log initial score history
-    await ScoreHistory.create({
-      studentProfileId: savedProfile._id,
-      previousScore: previousScore,
-      newScore: savedProfile.verificationScore,
-      triggerEvent: 'INITIAL_RESUME_PARSE',
-      breakdownSnapshot: savedProfile.scoreBreakdown,
-      rationale: `Initial profile confirmed with ${savedProfile.skills.length} skills, ${savedProfile.projects.length} projects, and CGPA ${savedProfile.cgpa}.`,
-    });
-
-    // 4. Generate initial Score Booster Tasks
-    const initialTasks = generateInitialBoosterTasks(savedProfile._id, savedProfile);
-    
-    // Clear old pending tasks if any and re-seed
-    await ScoreBoosterTask.deleteMany({
-      studentProfileId: savedProfile._id,
-      status: 'Pending',
-    });
-
+    let savedProfile;
     let createdTasks = [];
-    if (initialTasks.length > 0) {
-      createdTasks = await ScoreBoosterTask.insertMany(initialTasks);
+
+    if (mongoose.connection.readyState === 1) {
+      // 2. Upsert Student Profile in MongoDB
+      const existingProfile = await StudentProfile.findOne({ userId });
+      const previousScore = existingProfile ? existingProfile.verificationScore : 0;
+
+      savedProfile = await StudentProfile.findOneAndUpdate(
+        { userId },
+        updatePayload,
+        { new: true, upsert: true, runValidators: true }
+      );
+
+      // 3. Log initial score history
+      try {
+        await ScoreHistory.create({
+          studentProfileId: savedProfile._id,
+          previousScore: previousScore,
+          newScore: savedProfile.verificationScore,
+          triggerEvent: 'INITIAL_RESUME_PARSE',
+          breakdownSnapshot: savedProfile.scoreBreakdown,
+          rationale: `Initial profile confirmed with ${savedProfile.skills.length} skills, ${savedProfile.projects.length} projects, and CGPA ${savedProfile.cgpa}.`,
+        });
+      } catch (historyErr) {
+        console.warn('[ScoreHistory Warning]', historyErr.message);
+      }
+
+      // 4. Generate initial Score Booster Tasks
+      try {
+        const initialTasks = generateInitialBoosterTasks(savedProfile._id, savedProfile);
+        await ScoreBoosterTask.deleteMany({
+          studentProfileId: savedProfile._id,
+          status: 'Pending',
+        });
+        if (initialTasks.length > 0) {
+          createdTasks = await ScoreBoosterTask.insertMany(initialTasks);
+        }
+      } catch (taskErr) {
+        console.warn('[ScoreBoosterTask Warning]', taskErr.message);
+      }
+    } else {
+      console.warn('[Confirm Profile] MongoDB not connected, returning in-memory validated document.');
+      savedProfile = new StudentProfile(updatePayload);
+      savedProfile._id = new mongoose.Types.ObjectId();
+      createdTasks = generateInitialBoosterTasks(savedProfile._id, savedProfile);
     }
 
     return res.status(201).json({

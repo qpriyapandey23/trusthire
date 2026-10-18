@@ -47,6 +47,8 @@ export default function ResumeUpload() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [successData, setSuccessData] = useState(null);
+  const [spatialMetadata, setSpatialMetadata] = useState(null);
+  const [anchorsData, setAnchorsData] = useState(null);
 
   // Form State pre-filled from extractedData
   const [formData, setFormData] = useState({
@@ -119,13 +121,30 @@ export default function ResumeUpload() {
 
       const extracted = result.extractedData || {};
 
-      // Normalize skills (handles raw string array or object array)
+      // Save spatial metadata & anchors
+      setSpatialMetadata(result.spatialMetadata || null);
+      setAnchorsData(result.anchors || null);
+
+      // Preserve rich skill objects (with category, rationale, confidenceScore)
       const rawSkills = Array.isArray(extracted.skills) ? extracted.skills : [];
       const normalizedSkills = rawSkills.map((s) => {
-        if (typeof s === 'string') return s;
-        if (typeof s === 'object' && s !== null) return s.name || '';
-        return String(s);
-      }).filter(Boolean);
+        if (typeof s === 'object' && s !== null && s.name) {
+          return {
+            name: s.name,
+            category: s.category || 'General',
+            verifiedStatus: s.verifiedStatus || 'Pending',
+            rationale: s.rationale || 'Extracted from resume. Awaiting GitHub code audit.',
+            confidenceScore: typeof s.confidenceScore === 'number' ? s.confidenceScore : 40,
+          };
+        }
+        return {
+          name: String(s),
+          category: 'General',
+          verifiedStatus: 'Pending',
+          rationale: 'Extracted from resume. Awaiting GitHub code audit.',
+          confidenceScore: 40,
+        };
+      }).filter((s) => s.name && s.name.trim().length > 0);
 
       // Populate Form State
       setFormData({
@@ -134,7 +153,12 @@ export default function ResumeUpload() {
         branch: extracted.branch || 'Computer Science and Engineering',
         cgpa: extracted.cgpa !== undefined ? Number(extracted.cgpa) : 8.2,
         githubUsername: extracted.githubUsername || (extracted.fullName ? extracted.fullName.toLowerCase().replace(/\s+/g, '-') : ''),
-        skills: normalizedSkills.length > 0 ? normalizedSkills : ['JavaScript', 'React.js', 'Node.js', 'MongoDB'],
+        skills: normalizedSkills.length > 0 ? normalizedSkills : [
+          { name: 'JavaScript', category: 'Programming Languages', verifiedStatus: 'Pending', confidenceScore: 40, rationale: 'Core language claim' },
+          { name: 'React.js', category: 'Frontend', verifiedStatus: 'Pending', confidenceScore: 40, rationale: 'Frontend claim' },
+          { name: 'Node.js', category: 'Backend', verifiedStatus: 'Pending', confidenceScore: 40, rationale: 'Backend claim' },
+          { name: 'MongoDB', category: 'Database', verifiedStatus: 'Pending', confidenceScore: 40, rationale: 'Database claim' }
+        ],
         projects: Array.isArray(extracted.projects) && extracted.projects.length > 0
           ? extracted.projects.map((p) => ({
               title: p.title || 'Portfolio Project',
@@ -176,19 +200,29 @@ export default function ResumeUpload() {
   const handleAddSkill = (e) => {
     e.preventDefault();
     const trimmed = newSkillInput.trim();
-    if (trimmed && !formData.skills.includes(trimmed)) {
+    if (trimmed && !formData.skills.some((s) => (typeof s === 'object' ? s.name.toLowerCase() : s.toLowerCase()) === trimmed.toLowerCase())) {
       setFormData({
         ...formData,
-        skills: [...formData.skills, trimmed],
+        skills: [
+          ...formData.skills,
+          {
+            name: trimmed,
+            category: 'General',
+            verifiedStatus: 'Pending',
+            rationale: 'Manually added by candidate during onboarding review.',
+            confidenceScore: 40,
+          },
+        ],
       });
       setNewSkillInput('');
     }
   };
 
   const handleRemoveSkill = (skillToRemove) => {
+    const targetName = typeof skillToRemove === 'object' ? skillToRemove.name : skillToRemove;
     setFormData({
       ...formData,
-      skills: formData.skills.filter((s) => s !== skillToRemove),
+      skills: formData.skills.filter((s) => (typeof s === 'object' ? s.name : s) !== targetName),
     });
   };
 
@@ -620,6 +654,94 @@ export default function ResumeUpload() {
             </button>
           </div>
 
+          {/* Spatial Layout Pre-Processing Telemetry Card */}
+          {spatialMetadata && (
+            <div
+              className="glass-card"
+              style={{
+                padding: '16px 20px',
+                background: 'rgba(99, 102, 241, 0.08)',
+                border: '1px solid rgba(99, 102, 241, 0.25)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '8px',
+                    background: 'rgba(99, 102, 241, 0.2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#818cf8',
+                  }}
+                >
+                  <Cpu size={18} />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.92rem', fontWeight: 700, color: '#e0e7ff' }}>
+                    Spatial Layout Engine: {spatialMetadata.hasMultiColumn ? 'Multi-Column Reading Order Preserved' : 'Single-Column Standard Layout'}
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    Isolated sidebar text from right-column projects using coordinate bounding boxes ({spatialMetadata.extractionMethod}, {spatialMetadata.numPages} {spatialMetadata.numPages === 1 ? 'page' : 'pages'}).
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span
+                  style={{
+                    padding: '3px 10px',
+                    borderRadius: '9999px',
+                    background: spatialMetadata.hasMultiColumn ? 'rgba(56, 189, 248, 0.15)' : 'rgba(148, 163, 184, 0.15)',
+                    border: '1px solid rgba(56, 189, 248, 0.3)',
+                    color: '#38bdf8',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                  }}
+                >
+                  {spatialMetadata.hasMultiColumn ? '2-Column Isolated' : '1-Column Linear'}
+                </span>
+                {anchorsData && anchorsData.githubUrls && anchorsData.githubUrls.length > 0 && (
+                  <span
+                    style={{
+                      padding: '3px 10px',
+                      borderRadius: '9999px',
+                      background: 'rgba(52, 211, 153, 0.15)',
+                      border: '1px solid rgba(52, 211, 153, 0.3)',
+                      color: '#34d399',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {anchorsData.githubUrls.length} GitHub Anchor{anchorsData.githubUrls.length > 1 ? 's' : ''}
+                  </span>
+                )}
+                {anchorsData && anchorsData.liveDemoUrls && anchorsData.liveDemoUrls.length > 0 && (
+                  <span
+                    style={{
+                      padding: '3px 10px',
+                      borderRadius: '9999px',
+                      background: 'rgba(168, 85, 247, 0.15)',
+                      border: '1px solid rgba(168, 85, 247, 0.3)',
+                      color: '#c084fc',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {anchorsData.liveDemoUrls.length} Live Demo{anchorsData.liveDemoUrls.length > 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Section 1: Academic & Candidate Identity */}
           <div className="glass-card" style={{ padding: '28px' }}>
             <h4 style={{ fontSize: '1.15rem', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -689,14 +811,14 @@ export default function ResumeUpload() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
                 <h4 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Cpu size={20} color="#818cf8" /> Technical Skills Taxonomy
+                  <Cpu size={20} color="#818cf8" /> Canonical Technical Skills Taxonomy
                 </h4>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px' }}>
-                  Raw skill strings will be mapped to verified objects with <code style={{ color: '#fbbf24' }}>verifiedStatus: 'Pending'</code> awaiting GitHub code audit.
+                  Skills normalized into canonical taxonomy with empirical project cross-referencing and confidence scores.
                 </p>
               </div>
               <span className="badge badge-pending">
-                {formData.skills.length} Skills Extracted
+                {formData.skills.length} Skills Categorized
               </span>
             </div>
 
@@ -713,51 +835,76 @@ export default function ResumeUpload() {
                 marginBottom: '16px',
               }}
             >
-              {formData.skills.map((skill, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '6px 12px',
-                    background: 'rgba(99, 102, 241, 0.15)',
-                    border: '1px solid rgba(99, 102, 241, 0.3)',
-                    borderRadius: '9999px',
-                    fontSize: '0.88rem',
-                    color: '#e0e7ff',
-                  }}
-                >
-                  <span>{skill}</span>
-                  <span
+              {formData.skills.map((skill, idx) => {
+                const name = typeof skill === 'object' ? skill.name : skill;
+                const category = typeof skill === 'object' && skill.category ? skill.category : 'General';
+                const confidence = typeof skill === 'object' && skill.confidenceScore !== undefined ? skill.confidenceScore : 40;
+                const rationale = typeof skill === 'object' && skill.rationale ? skill.rationale : 'Pending automated code audit.';
+                const isHighConfidence = confidence >= 75;
+
+                return (
+                  <div
+                    key={idx}
+                    title={rationale}
                     style={{
-                      fontSize: '0.7rem',
-                      padding: '1px 5px',
-                      background: 'rgba(245, 158, 11, 0.2)',
-                      color: '#fbbf24',
-                      borderRadius: '4px',
-                    }}
-                  >
-                    Pending
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveSkill(skill)}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: '#94a3b8',
-                      cursor: 'pointer',
-                      display: 'flex',
+                      display: 'inline-flex',
                       alignItems: 'center',
-                      padding: '2px',
+                      gap: '8px',
+                      padding: '6px 12px',
+                      background: isHighConfidence ? 'rgba(16, 185, 129, 0.12)' : 'rgba(99, 102, 241, 0.12)',
+                      border: `1px solid ${isHighConfidence ? 'rgba(16, 185, 129, 0.3)' : 'rgba(99, 102, 241, 0.3)'}`,
+                      borderRadius: '9999px',
+                      fontSize: '0.86rem',
+                      color: '#e0e7ff',
+                      cursor: 'default',
                     }}
-                    title="Remove skill"
                   >
-                    ×
-                  </button>
-                </div>
-              ))}
+                    <span style={{ fontWeight: 600 }}>{name}</span>
+                    <span
+                      style={{
+                        fontSize: '0.68rem',
+                        padding: '1px 6px',
+                        background: 'rgba(56, 189, 248, 0.2)',
+                        color: '#38bdf8',
+                        borderRadius: '4px',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {category}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '0.68rem',
+                        padding: '1px 5px',
+                        background: isHighConfidence ? 'rgba(16, 185, 129, 0.25)' : 'rgba(245, 158, 11, 0.2)',
+                        color: isHighConfidence ? '#34d399' : '#fbbf24',
+                        borderRadius: '4px',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {confidence}%
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveSkill(skill)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#94a3b8',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        padding: '2px',
+                        fontSize: '1rem',
+                        lineHeight: 1,
+                      }}
+                      title="Remove skill"
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
 
               {formData.skills.length === 0 && (
                 <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
