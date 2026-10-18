@@ -15,20 +15,16 @@ import {
   Check,
   RefreshCw,
   Cpu,
+  X,
+  Shield,
+  Code2,
+  Database,
 } from 'lucide-react';
 
 const GithubIcon = ({ size = 18, color = 'currentColor' }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke={color}
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    style={{ display: 'inline-block', verticalAlign: 'middle' }}
-  >
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+    style={{ display: 'inline-block', verticalAlign: 'middle', flexShrink: 0 }}>
     <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4" />
     <path d="M9 18c-4.51 2-5-2-7-2" />
   </svg>
@@ -41,7 +37,6 @@ const GithubIcon = ({ size = 18, color = 'currentColor' }) => (
  * Stage 3: Confirmed & Persisted in MongoDB
  */
 export default function ResumeUpload() {
-  // stages: 'upload' | 'parsing' | 'review' | 'saving' | 'success'
   const [stage, setStage] = useState('upload');
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
@@ -50,9 +45,8 @@ export default function ResumeUpload() {
   const [spatialMetadata, setSpatialMetadata] = useState(null);
   const [anchorsData, setAnchorsData] = useState(null);
 
-  // Form State pre-filled from extractedData
   const [formData, setFormData] = useState({
-    userId: '66d0c7f29a34bc123456789a', // Valid default 24-hex mock ObjectId for demo
+    userId: '66d0c7f29a34bc123456789a',
     rollNumber: '',
     branch: '',
     cgpa: 8.5,
@@ -67,66 +61,49 @@ export default function ResumeUpload() {
   const [newSkillInput, setNewSkillInput] = useState('');
   const fileInputRef = useRef(null);
 
-  // Drag & Drop Handlers
+  /* ── Drag & Drop ── */
   const handleDrag = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setDragActive(true);
-    } else if (e.type === 'dragleave') {
-      setDragActive(false);
-    }
+    e.preventDefault(); e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') setDragActive(true);
+    else if (e.type === 'dragleave') setDragActive(false);
   };
 
   const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+    e.preventDefault(); e.stopPropagation();
     setDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFileSelected(e.dataTransfer.files[0]);
-    }
+    if (e.dataTransfer.files?.[0]) handleFileSelected(e.dataTransfer.files[0]);
   };
 
   const handleFileInputChange = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      handleFileSelected(e.target.files[0]);
-    }
+    if (e.target.files?.[0]) handleFileSelected(e.target.files[0]);
   };
 
-  // Stage 1: Validate file & send to POST /api/profile/parse-resume
+  /* ── Stage 1: Parse ── */
   const handleFileSelected = async (file) => {
     setErrorMessage('');
     if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
-      setErrorMessage('Invalid file format. Please upload a .pdf document.');
+      setErrorMessage('Invalid file. Please upload a PDF document.');
       return;
     }
-
     setSelectedFile(file);
     setStage('parsing');
 
-    const uploadPayload = new FormData();
-    uploadPayload.append('resume', file);
+    const payload = new FormData();
+    payload.append('resume', file);
 
     try {
-      const response = await fetch('/api/profile/parse-resume', {
-        method: 'POST',
-        body: uploadPayload,
-      });
+      const res = await fetch('/api/profile/parse-resume', { method: 'POST', body: payload });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.message || 'Failed to parse resume.');
 
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.message || 'Failed to parse resume with AI.');
-      }
-
-      const extracted = result.extractedData || {};
+      const ex = result.extractedData || {};
 
       // Save spatial metadata & anchors
       setSpatialMetadata(result.spatialMetadata || null);
       setAnchorsData(result.anchors || null);
 
       // Preserve rich skill objects (with category, rationale, confidenceScore)
-      const rawSkills = Array.isArray(extracted.skills) ? extracted.skills : [];
+      const rawSkills = Array.isArray(ex.skills) ? ex.skills : [];
       const normalizedSkills = rawSkills.map((s) => {
         if (typeof s === 'object' && s !== null && s.name) {
           return {
@@ -146,61 +123,53 @@ export default function ResumeUpload() {
         };
       }).filter((s) => s.name && s.name.trim().length > 0);
 
+      const defaultSkills = [
+        { name: 'JavaScript', category: 'Programming Languages', verifiedStatus: 'Pending', confidenceScore: 40, rationale: 'Core language claim' },
+        { name: 'React.js', category: 'Frontend', verifiedStatus: 'Pending', confidenceScore: 40, rationale: 'Frontend claim' },
+        { name: 'Node.js', category: 'Backend', verifiedStatus: 'Pending', confidenceScore: 40, rationale: 'Backend claim' },
+        { name: 'MongoDB', category: 'Database', verifiedStatus: 'Pending', confidenceScore: 40, rationale: 'Database claim' }
+      ];
+
       // Populate Form State
       setFormData({
         userId: formData.userId || '66d0c7f29a34bc123456789a',
-        rollNumber: extracted.rollNumber || 'CS' + Math.floor(100000 + Math.random() * 900000),
-        branch: extracted.branch || 'Computer Science and Engineering',
-        cgpa: extracted.cgpa !== undefined ? Number(extracted.cgpa) : 8.2,
-        githubUsername: extracted.githubUsername || (extracted.fullName ? extracted.fullName.toLowerCase().replace(/\s+/g, '-') : ''),
-        skills: normalizedSkills.length > 0 ? normalizedSkills : [
-          { name: 'JavaScript', category: 'Programming Languages', verifiedStatus: 'Pending', confidenceScore: 40, rationale: 'Core language claim' },
-          { name: 'React.js', category: 'Frontend', verifiedStatus: 'Pending', confidenceScore: 40, rationale: 'Frontend claim' },
-          { name: 'Node.js', category: 'Backend', verifiedStatus: 'Pending', confidenceScore: 40, rationale: 'Backend claim' },
-          { name: 'MongoDB', category: 'Database', verifiedStatus: 'Pending', confidenceScore: 40, rationale: 'Database claim' }
-        ],
-        projects: Array.isArray(extracted.projects) && extracted.projects.length > 0
-          ? extracted.projects.map((p) => ({
+        rollNumber: ex.rollNumber || 'CS' + Math.floor(100000 + Math.random() * 900000),
+        branch: ex.branch || 'Computer Science and Engineering',
+        cgpa: ex.cgpa !== undefined ? Number(ex.cgpa) : 8.2,
+        githubUsername: ex.githubUsername || (ex.fullName ? ex.fullName.toLowerCase().replace(/\s+/g, '-') : ''),
+        skills: normalizedSkills.length > 0 ? normalizedSkills : defaultSkills,
+        projects: Array.isArray(ex.projects) && ex.projects.length > 0
+          ? ex.projects.map((p) => ({
               title: p.title || 'Portfolio Project',
               description: p.description || '',
               githubUrl: p.githubUrl || '',
               liveDemoUrl: p.liveDemoUrl || '',
               techStack: Array.isArray(p.techStack) ? p.techStack.join(', ') : (p.techStack || ''),
             }))
-          : [
-              {
-                title: 'Full Stack Web Platform',
-                description: 'End-to-end full stack application with authentication and database persistence.',
-                githubUrl: 'https://github.com/example/fullstack-app',
-                liveDemoUrl: 'https://demo-app.vercel.app',
-                techStack: 'React, Node.js, Express, MongoDB',
-              },
-            ],
-        certifications: Array.isArray(extracted.certifications) && extracted.certifications.length > 0
-          ? extracted.certifications.map((c) => ({
-              title: c.title || 'Technical Certification',
-              issuer: c.issuer || '',
-              proofUrl: c.proofUrl || '',
-            }))
+          : [{ title: 'Full Stack Web Platform', description: 'End-to-end full stack application with authentication and database persistence.', githubUrl: 'https://github.com/example/fullstack-app', liveDemoUrl: 'https://demo-app.vercel.app', techStack: 'React, Node.js, Express, MongoDB' }],
+        certifications: Array.isArray(ex.certifications) && ex.certifications.length
+          ? ex.certifications.map((c) => ({ title: c.title || '', issuer: c.issuer || '', proofUrl: c.proofUrl || '' }))
           : [],
         rawResumeText: result.rawText || '',
         resumeFileName: file.name,
       });
-
-      // Advance to Stage 2: Preview Form
       setStage('review');
     } catch (err) {
-      console.error('[Upload Error]', err);
-      setErrorMessage(err.message || 'An error occurred during resume parsing. Please check backend connection.');
+      setErrorMessage(err.message || 'An error occurred. Please check the backend connection.');
       setStage('upload');
     }
   };
 
-  // Skill Tag Handlers
+  /* ── Skills ── */
   const handleAddSkill = (e) => {
     e.preventDefault();
     const trimmed = newSkillInput.trim();
-    if (trimmed && !formData.skills.some((s) => (typeof s === 'object' ? s.name.toLowerCase() : s.toLowerCase()) === trimmed.toLowerCase())) {
+    if (
+      trimmed &&
+      !formData.skills.some(
+        (s) => (typeof s === 'object' ? s.name.toLowerCase() : String(s).toLowerCase()) === trimmed.toLowerCase()
+      )
+    ) {
       setFormData({
         ...formData,
         skills: [
@@ -226,442 +195,272 @@ export default function ResumeUpload() {
     });
   };
 
-  // Project Handlers
-  const handleProjectChange = (index, field, value) => {
-    const updated = [...formData.projects];
-    updated[index] = { ...updated[index], [field]: value };
-    setFormData({ ...formData, projects: updated });
+  /* ── Projects ── */
+  const handleProjectChange = (i, field, val) => {
+    const u = [...formData.projects]; u[i] = { ...u[i], [field]: val };
+    setFormData({ ...formData, projects: u });
   };
+  const handleAddProject = () => setFormData({ ...formData, projects: [...formData.projects, { title: '', description: '', githubUrl: '', liveDemoUrl: '', techStack: '' }] });
+  const handleRemoveProject = (i) => setFormData({ ...formData, projects: formData.projects.filter((_, idx) => idx !== i) });
 
-  const handleAddProject = () => {
-    setFormData({
-      ...formData,
-      projects: [
-        ...formData.projects,
-        {
-          title: '',
-          description: '',
-          githubUrl: '',
-          liveDemoUrl: '',
-          techStack: '',
-        },
-      ],
-    });
+  /* ── Certifications ── */
+  const handleCertChange = (i, field, val) => {
+    const u = [...formData.certifications]; u[i] = { ...u[i], [field]: val };
+    setFormData({ ...formData, certifications: u });
   };
+  const handleAddCert = () => setFormData({ ...formData, certifications: [...formData.certifications, { title: '', issuer: '', proofUrl: '' }] });
+  const handleRemoveCert = (i) => setFormData({ ...formData, certifications: formData.certifications.filter((_, idx) => idx !== i) });
 
-  const handleRemoveProject = (index) => {
-    setFormData({
-      ...formData,
-      projects: formData.projects.filter((_, i) => i !== index),
-    });
-  };
-
-  // Certification Handlers
-  const handleCertChange = (index, field, value) => {
-    const updated = [...formData.certifications];
-    updated[index] = { ...updated[index], [field]: value };
-    setFormData({ ...formData, certifications: updated });
-  };
-
-  const handleAddCert = () => {
-    setFormData({
-      ...formData,
-      certifications: [
-        ...formData.certifications,
-        { title: '', issuer: '', proofUrl: '' },
-      ],
-    });
-  };
-
-  const handleRemoveCert = (index) => {
-    setFormData({
-      ...formData,
-      certifications: formData.certifications.filter((_, i) => i !== index),
-    });
-  };
-
-  // Stage 3: Confirm & Save Profile to POST /api/profile/confirm-profile
+  /* ── Stage 3: Save ── */
   const handleConfirmProfile = async () => {
     setErrorMessage('');
     setStage('saving');
-
     const payload = {
-      userId: formData.userId,
-      rollNumber: formData.rollNumber,
-      branch: formData.branch,
+      ...formData,
       cgpa: Number(formData.cgpa) || 0,
-      githubUsername: formData.githubUsername,
-      skills: formData.skills, // raw skill strings mapped to objects by backend
       projects: formData.projects.map((p) => ({
         ...p,
         techStack: typeof p.techStack === 'string'
           ? p.techStack.split(',').map((t) => t.trim()).filter(Boolean)
           : p.techStack,
       })),
-      certifications: formData.certifications,
-      rawResumeText: formData.rawResumeText,
-      resumeFileName: formData.resumeFileName,
     };
-
     try {
-      const response = await fetch('/api/profile/confirm-profile', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to persist student profile in database.');
-      }
-
+      const res = await fetch('/api/profile/confirm-profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to save profile.');
       setSuccessData(data.profile || data.data || data);
       setStage('success');
     } catch (err) {
-      console.error('[Confirm Profile Error]', err);
-      setErrorMessage(err.message || 'Failed to confirm profile. Please try again.');
+      setErrorMessage(err.message || 'Failed to confirm profile. Try again.');
       setStage('review');
     }
   };
 
-  const handleReset = () => {
-    setSelectedFile(null);
-    setErrorMessage('');
-    setSuccessData(null);
-    setStage('upload');
+  const handleReset = () => { setSelectedFile(null); setErrorMessage(''); setSuccessData(null); setStage('upload'); };
+
+  /* ── Helpers ── */
+  const steps = ['Upload Resume', 'Review Details', 'Save Profile'];
+  const stepIdx = { upload: 0, parsing: 0, review: 1, saving: 1, success: 2 }[stage] ?? 0;
+
+  const card = {
+    background: 'var(--bg-card)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-lg)',
+    padding: '28px',
+  };
+
+  const sectionHead = {
+    fontSize: '0.95rem',
+    fontWeight: 700,
+    color: 'var(--text-primary)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '4px',
+    letterSpacing: '-0.02em',
+  };
+
+  const sectionSub = {
+    fontSize: '0.82rem',
+    color: 'var(--text-muted)',
+    marginBottom: '20px',
+  };
+
+  const inner = {
+    background: 'var(--bg-subtle)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-md)',
+    padding: '16px',
   };
 
   return (
-    <div style={{ maxWidth: '980px', margin: '0 auto', padding: '32px 16px' }}>
-      {/* Header & Tagline */}
-      <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-        <div
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '6px 14px',
-            background: 'rgba(99, 102, 241, 0.12)',
-            border: '1px solid rgba(99, 102, 241, 0.3)',
-            borderRadius: '9999px',
-            color: '#a5b4fc',
-            fontSize: '0.85rem',
-            fontWeight: 600,
-            marginBottom: '12px',
-          }}
-        >
-          <Sparkles size={16} /> TrustHire Placement Intelligence
-        </div>
-        <h1 style={{ fontSize: '2.5rem', fontWeight: 800, color: '#ffffff', marginBottom: '10px' }}>
-          Resume Onboarding & Verification
+    <div style={{ maxWidth: '820px', margin: '0 auto', padding: '40px 20px 64px' }}>
+
+      {/* ── Page heading ── */}
+      <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+        
+        <h1 style={{ fontSize: 'clamp(1.75rem, 4vw, 2.4rem)', letterSpacing: '-0.035em', marginBottom: '12px' }}>
+          Resume Onboarding &amp; Verification
         </h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '1.05rem', maxWidth: '640px', margin: '0 auto' }}>
-          Upload your engineering resume to extract technical credentials with Gemini AI, verify claims via empirical code audit, and persist your verified placement profile.
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', maxWidth: '520px', margin: '0 auto', lineHeight: 1.65 }}>
+          Upload your resume to extract credentials with Gemini AI, verify claims via GitHub audit, and build your verified placement profile.
         </p>
       </div>
 
-      {/* Stepper Progress Bar */}
-      <div
-        className="glass-card"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
-          padding: '16px 24px',
-          marginBottom: '32px',
-          gap: '12px',
-        }}
-      >
-        {/* Step 1 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div
-            style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: stage === 'upload' || stage === 'parsing' ? 'var(--accent-primary)' : '#10b981',
-              color: '#fff',
-              fontWeight: 700,
-            }}
-          >
-            {stage === 'review' || stage === 'saving' || stage === 'success' ? <Check size={18} /> : '1'}
-          </div>
-          <div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Stage 1</div>
-            <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#f8fafc' }}>Upload PDF</div>
-          </div>
-        </div>
-
-        {/* Step 2 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div
-            style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: stage === 'review' || stage === 'saving' ? 'var(--accent-primary)' : stage === 'success' ? '#10b981' : '#1e293b',
-              color: stage === 'upload' || stage === 'parsing' ? 'var(--text-muted)' : '#fff',
-              fontWeight: 700,
-              border: stage === 'upload' || stage === 'parsing' ? '1px solid var(--border-subtle)' : 'none',
-            }}
-          >
-            {stage === 'success' ? <Check size={18} /> : '2'}
-          </div>
-          <div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Stage 2</div>
-            <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#f8fafc' }}>Review & Adjust</div>
-          </div>
-        </div>
-
-        {/* Step 3 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div
-            style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: stage === 'success' ? '#10b981' : '#1e293b',
-              color: stage === 'success' ? '#fff' : 'var(--text-muted)',
-              fontWeight: 700,
-              border: stage !== 'success' ? '1px solid var(--border-subtle)' : 'none',
-            }}
-          >
-            {stage === 'success' ? <Check size={18} /> : '3'}
-          </div>
-          <div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Stage 3</div>
-            <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#f8fafc' }}>Saved & Verified</div>
-          </div>
-        </div>
+      {/* ── Stepper ── */}
+      <div style={{
+        ...card, padding: '16px 24px',
+        display: 'flex', alignItems: 'center',
+        marginBottom: '28px',
+      }}>
+        {steps.map((label, i) => {
+          const done = i < stepIdx;
+          const active = i === stepIdx;
+          return (
+            <React.Fragment key={i}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
+                <div style={{
+                  width: '30px', height: '30px', borderRadius: '50%', flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '0.8rem', fontWeight: 700, transition: 'all 0.2s',
+                  ...(done
+                    ? { background: 'var(--green)', color: '#fff' }
+                    : active
+                    ? { background: 'var(--brand)', color: '#fff' }
+                    : { background: 'var(--bg-muted)', color: 'var(--text-muted)', border: '1px solid var(--border)' }),
+                }}>
+                  {done ? <Check size={14} strokeWidth={3} /> : i + 1}
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{
+                    fontSize: '0.83rem', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    color: active ? 'var(--text-primary)' : done ? 'var(--green)' : 'var(--text-muted)',
+                  }}>{label}</div>
+                </div>
+              </div>
+              {i < steps.length - 1 && (
+                <div style={{ height: '1px', flex: '0 0 28px', margin: '0 6px', background: i < stepIdx ? 'var(--green)' : 'var(--border)', transition: 'background 0.3s' }} />
+              )}
+            </React.Fragment>
+          );
+        })}
       </div>
 
-      {/* Global Error Banner */}
+      {/* ── Error ── */}
       {errorMessage && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            padding: '14px 18px',
-            background: 'rgba(244, 63, 94, 0.12)',
-            border: '1px solid rgba(244, 63, 94, 0.3)',
-            borderRadius: 'var(--radius-md)',
-            color: '#fca5a5',
-            marginBottom: '24px',
-          }}
-        >
-          <AlertCircle size={20} style={{ flexShrink: 0 }} />
-          <div style={{ flex: 1, fontSize: '0.9rem' }}>{errorMessage}</div>
-          <button
-            onClick={() => setErrorMessage('')}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#fca5a5',
-              cursor: 'pointer',
-              fontWeight: 600,
-            }}
-          >
-            Dismiss
+        <div style={{
+          display: 'flex', alignItems: 'flex-start', gap: '10px',
+          padding: '12px 16px', background: 'var(--red-muted)',
+          border: '1px solid #fecaca', borderRadius: 'var(--radius-md)',
+          color: 'var(--red)', marginBottom: '20px', fontSize: '0.87rem',
+        }}>
+          <AlertCircle size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
+          <div style={{ flex: 1 }}>{errorMessage}</div>
+          <button onClick={() => setErrorMessage('')} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer' }}>
+            <X size={15} />
           </button>
         </div>
       )}
 
-      {/* STAGE 1: Drag-and-Drop Dropzone */}
+      {/* ══════════════════════════════
+          STAGE 1 — Upload
+         ══════════════════════════════ */}
       {stage === 'upload' && (
-        <div className="glass-card" style={{ padding: '40px', textAlign: 'center' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {/* Drop zone */}
           <div
-            onDragEnter={handleDrag}
-            onDragLeave={handleDrag}
-            onDragOver={handleDrag}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current && fileInputRef.current.click()}
+            onDragEnter={handleDrag} onDragLeave={handleDrag}
+            onDragOver={handleDrag} onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
             style={{
-              border: dragActive
-                ? '2px dashed #6366f1'
-                : '2px dashed rgba(255, 255, 255, 0.16)',
+              border: `2px dashed ${dragActive ? 'var(--brand)' : 'var(--border)'}`,
               borderRadius: 'var(--radius-lg)',
-              padding: '60px 24px',
-              backgroundColor: dragActive
-                ? 'rgba(99, 102, 241, 0.08)'
-                : 'rgba(15, 23, 42, 0.4)',
+              padding: '60px 32px',
+              textAlign: 'center',
+              background: dragActive ? 'var(--brand-muted)' : 'var(--bg-card)',
               cursor: 'pointer',
-              transition: 'all 0.25s ease',
+              transition: 'border-color 0.15s, background 0.15s',
             }}
           >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf,application/pdf"
-              style={{ display: 'none' }}
-              onChange={handleFileInputChange}
-            />
+            <input ref={fileInputRef} type="file" accept=".pdf,application/pdf"
+              style={{ display: 'none' }} onChange={handleFileInputChange} />
 
-            <div
-              style={{
-                width: '72px',
-                height: '72px',
-                borderRadius: '50%',
-                background: 'rgba(99, 102, 241, 0.15)',
-                color: '#818cf8',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 auto 20px',
-              }}
-            >
-              <UploadCloud size={36} />
+            <div style={{
+              width: '56px', height: '56px', borderRadius: 'var(--radius-md)',
+              background: 'var(--bg-muted)', border: '1px solid var(--border)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 18px', transition: 'background 0.15s',
+            }}>
+              <UploadCloud size={26} color={dragActive ? 'var(--brand)' : 'var(--text-secondary)'} strokeWidth={1.8} />
             </div>
 
-            <h3 style={{ fontSize: '1.4rem', marginBottom: '8px' }}>
-              Drag and drop your PDF resume here
-            </h3>
-            <p style={{ color: 'var(--text-secondary)', marginBottom: '20px', fontSize: '0.95rem' }}>
-              Supports standard technical PDF resumes up to 10MB
+            <h2 style={{ fontSize: '1.2rem', marginBottom: '6px', letterSpacing: '-0.02em' }}>
+              {dragActive ? 'Drop to upload' : 'Drop your PDF resume here'}
+            </h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.87rem', marginBottom: '22px' }}>
+              or click to browse — PDF only, up to 10 MB
             </p>
 
-            <button
-              type="button"
-              className="btn btn-primary"
-              style={{ pointerEvents: 'none' }}
-            >
-              <FileText size={18} /> Browse PDF Files
+            <button type="button" className="btn btn-primary" style={{ pointerEvents: 'none' }}>
+              <FileText size={15} /> Browse Files
             </button>
           </div>
 
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'center',
-              gap: '24px',
-              marginTop: '28px',
-              color: 'var(--text-muted)',
-              fontSize: '0.85rem',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Cpu size={15} color="#818cf8" /> Gemini 1.5 Structured NLP
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <GithubIcon size={15} color="#818cf8" /> Automatic GitHub Extraction
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <CheckCircle size={15} color="#818cf8" /> Empirical Claim Verification
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* STAGE 1 (Parsing State): Animated Loading View */}
-      {stage === 'parsing' && (
-        <div
-          className="glass-card glow-box"
-          style={{ padding: '60px 32px', textAlign: 'center' }}
-        >
-          <div
-            style={{
-              width: '80px',
-              height: '80px',
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(168, 85, 247, 0.2))',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 24px',
-              border: '2px solid rgba(99, 102, 241, 0.4)',
-            }}
-          >
-            <RefreshCw size={36} color="#818cf8" className="animate-spin" />
-          </div>
-
-          <h3 style={{ fontSize: '1.6rem', marginBottom: '10px' }}>
-            Parsing Resume with AI...
-          </h3>
-          <p style={{ color: 'var(--text-secondary)', maxWidth: '480px', margin: '0 auto 24px' }}>
-            Extracting candidate metadata, technical skill taxonomy, GitHub repositories, and live demo links from{' '}
-            <strong style={{ color: '#fff' }}>{selectedFile ? selectedFile.name : 'uploaded document'}</strong>.
-          </p>
-
-          <div
-            style={{
-              maxWidth: '360px',
-              margin: '0 auto',
-              background: 'rgba(15, 23, 42, 0.8)',
-              borderRadius: '9999px',
-              height: '6px',
-              overflow: 'hidden',
-              position: 'relative',
-            }}
-          >
-            <div
-              style={{
-                width: '60%',
-                height: '100%',
-                background: 'var(--accent-gradient)',
-                borderRadius: '9999px',
-                animation: 'pulseGlow 1.5s infinite',
-              }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* STAGE 2: Interactive Preview Form Pre-Filled with ExtractedData */}
-      {(stage === 'review' || stage === 'saving') && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          {/* Review Header Banner */}
-          <div
-            className="glass-card"
-            style={{
-              padding: '20px 24px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: '16px',
-            }}
-          >
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <h3 style={{ fontSize: '1.3rem' }}>Review Extracted Credentials</h3>
-                <span className="badge badge-primary">
-                  <Sparkles size={12} /> AI Extracted
-                </span>
+          {/* Feature pills */}
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            {[
+              { icon: <Cpu size={13} />, label: 'Gemini AI Extraction' },
+              { icon: <GithubIcon size={13} />, label: 'GitHub Code Audit' },
+              { icon: <Shield size={13} />, label: 'Claim Verification' },
+            ].map(({ icon, label }) => (
+              <div key={label} style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                padding: '5px 12px', borderRadius: 'var(--radius-full)',
+                background: 'var(--bg-card)', border: '1px solid var(--border)',
+                fontSize: '0.78rem', fontWeight: 500, color: 'var(--text-secondary)',
+              }}>
+                <span style={{ color: 'var(--text-muted)' }}>{icon}</span>
+                {label}
               </div>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '4px' }}>
-                Please review, verify, or amend any details extracted from your resume before finalizing your profile.
-              </p>
-            </div>
+            ))}
+          </div>
+        </div>
+      )}
 
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={handleReset}
-              style={{ fontSize: '0.85rem' }}
-            >
-              <ArrowLeft size={16} /> Re-upload Resume
+      {/* ══════════════════════════════
+          STAGE 1 (Parsing) — Loading
+         ══════════════════════════════ */}
+      {stage === 'parsing' && (
+        <div style={{ ...card, textAlign: 'center', padding: '64px 32px' }} className="animate-fade-up">
+          <div style={{
+            width: '60px', height: '60px', borderRadius: '50%',
+            background: 'var(--bg-muted)', border: '1px solid var(--border)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            margin: '0 auto 22px',
+          }}>
+            <RefreshCw size={26} color="var(--brand)" className="animate-spin" strokeWidth={2} />
+          </div>
+          <h2 style={{ fontSize: '1.25rem', marginBottom: '8px' }}>Analysing your resume…</h2>
+          <p style={{ color: 'var(--text-secondary)', maxWidth: '400px', margin: '0 auto 28px', fontSize: '0.87rem', lineHeight: 1.65 }}>
+            Gemini AI is extracting credentials from{' '}
+            <strong style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{selectedFile?.name}</strong>.
+          </p>
+          <div style={{ maxWidth: '280px', margin: '0 auto', background: 'var(--bg-muted)', borderRadius: '999px', height: '4px', overflow: 'hidden' }}>
+            <div className="shimmer-bar" style={{ height: '100%', width: '100%' }} />
+          </div>
+          <p style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: '10px' }}>Usually takes 5–10 seconds</p>
+        </div>
+      )}
+
+      {/* ══════════════════════════════
+          STAGE 2 — Review
+         ══════════════════════════════ */}
+      {(stage === 'review' || stage === 'saving') && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }} className="animate-fade-up">
+
+          {/* Review header */}
+          <div style={{ ...card, padding: '18px 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
+                <h3 style={{ fontSize: '0.97rem', letterSpacing: '-0.02em' }}>Review Extracted Credentials</h3>
+                <span className="badge badge-primary"><Sparkles size={10} /> AI Extracted</span>
+              </div>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Verify and amend details before finalising.</p>
+            </div>
+            <button type="button" className="btn btn-secondary" onClick={handleReset} style={{ fontSize: '0.8rem' }}>
+              <ArrowLeft size={13} /> Re-upload
             </button>
           </div>
 
           {/* Spatial Layout Pre-Processing Telemetry Card */}
           {spatialMetadata && (
             <div
-              className="glass-card"
               style={{
+                ...card,
                 padding: '16px 20px',
-                background: 'rgba(99, 102, 241, 0.08)',
-                border: '1px solid rgba(99, 102, 241, 0.25)',
+                background: 'var(--brand-muted)',
+                borderColor: 'var(--brand)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
@@ -672,20 +471,21 @@ export default function ResumeUpload() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div
                   style={{
-                    width: '34px',
-                    height: '34px',
-                    borderRadius: '8px',
-                    background: 'rgba(99, 102, 241, 0.2)',
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    color: '#818cf8',
+                    color: 'var(--brand)',
                   }}
                 >
                   <Cpu size={18} />
                 </div>
                 <div>
-                  <div style={{ fontSize: '0.92rem', fontWeight: 700, color: '#e0e7ff' }}>
+                  <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                     Spatial Layout Engine: {spatialMetadata.hasMultiColumn ? 'Multi-Column Reading Order Preserved' : 'Single-Column Standard Layout'}
                   </div>
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
@@ -698,10 +498,10 @@ export default function ResumeUpload() {
                 <span
                   style={{
                     padding: '3px 10px',
-                    borderRadius: '9999px',
-                    background: spatialMetadata.hasMultiColumn ? 'rgba(56, 189, 248, 0.15)' : 'rgba(148, 163, 184, 0.15)',
-                    border: '1px solid rgba(56, 189, 248, 0.3)',
-                    color: '#38bdf8',
+                    borderRadius: 'var(--radius-full)',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--brand)',
                     fontSize: '0.75rem',
                     fontWeight: 600,
                   }}
@@ -712,10 +512,10 @@ export default function ResumeUpload() {
                   <span
                     style={{
                       padding: '3px 10px',
-                      borderRadius: '9999px',
-                      background: 'rgba(52, 211, 153, 0.15)',
-                      border: '1px solid rgba(52, 211, 153, 0.3)',
-                      color: '#34d399',
+                      borderRadius: 'var(--radius-full)',
+                      background: 'var(--green-muted)',
+                      border: '1px solid #86efac',
+                      color: 'var(--green)',
                       fontSize: '0.75rem',
                       fontWeight: 600,
                     }}
@@ -727,10 +527,10 @@ export default function ResumeUpload() {
                   <span
                     style={{
                       padding: '3px 10px',
-                      borderRadius: '9999px',
-                      background: 'rgba(168, 85, 247, 0.15)',
-                      border: '1px solid rgba(168, 85, 247, 0.3)',
-                      color: '#c084fc',
+                      borderRadius: 'var(--radius-full)',
+                      background: 'var(--bg-subtle)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text-primary)',
                       fontSize: '0.75rem',
                       fontWeight: 600,
                     }}
@@ -742,130 +542,98 @@ export default function ResumeUpload() {
             </div>
           )}
 
-          {/* Section 1: Academic & Candidate Identity */}
-          <div className="glass-card" style={{ padding: '28px' }}>
-            <h4 style={{ fontSize: '1.15rem', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Layers size={20} color="#818cf8" /> Candidate & Academic Credentials
-            </h4>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px' }}>
+          {/* ─ Academic & Identity ─ */}
+          <div style={card}>
+            <div style={sectionHead}><Layers size={16} color="var(--text-muted)" /> Academic &amp; Identity</div>
+            <p style={sectionSub}>Core credentials extracted from your resume.</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '14px' }}>
               <div className="form-group">
-                <label className="form-label">University Roll Number / ID</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={formData.rollNumber}
-                  onChange={(e) => setFormData({ ...formData, rollNumber: e.target.value })}
-                  placeholder="e.g. 21BCSE104"
-                />
+                <label className="form-label">Roll Number / ID</label>
+                <input type="text" className="form-input" value={formData.rollNumber}
+                  onChange={(e) => setFormData({ ...formData, rollNumber: e.target.value })} placeholder="e.g. 21BCSE104" />
               </div>
-
               <div className="form-group">
                 <label className="form-label">Degree Branch</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={formData.branch}
-                  onChange={(e) => setFormData({ ...formData, branch: e.target.value })}
-                  placeholder="e.g. Computer Science and Engineering"
-                />
+                <input type="text" className="form-input" value={formData.branch}
+                  onChange={(e) => setFormData({ ...formData, branch: e.target.value })} placeholder="e.g. Computer Science" />
               </div>
-
               <div className="form-group">
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <label className="form-label">Academic CGPA (out of 10)</label>
-                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#34d399' }}>
-                    {formData.cgpa} / 10.0
-                  </span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                  <label className="form-label" style={{ marginBottom: 0 }}>CGPA (out of 10)</label>
+                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--brand)' }}>{formData.cgpa} / 10</span>
                 </div>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="10"
-                  className="form-input"
-                  value={formData.cgpa}
-                  onChange={(e) => setFormData({ ...formData, cgpa: e.target.value })}
-                />
+                <input type="number" step="0.1" min="0" max="10" className="form-input" value={formData.cgpa}
+                  onChange={(e) => setFormData({ ...formData, cgpa: e.target.value })} />
               </div>
-
               <div className="form-group">
-                <label className="form-label">GitHub Username</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={formData.githubUsername}
-                  onChange={(e) => setFormData({ ...formData, githubUsername: e.target.value })}
-                  placeholder="e.g. priyapandey"
-                />
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <GithubIcon size={11} color="var(--text-muted)" /> GitHub Username
+                </label>
+                <input type="text" className="form-input" value={formData.githubUsername}
+                  onChange={(e) => setFormData({ ...formData, githubUsername: e.target.value })} placeholder="e.g. priyapandey" />
               </div>
             </div>
-
-            <div style={{ marginTop: '12px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Linked MongoDB User Reference: <code style={{ color: '#a5b4fc' }}>{formData.userId}</code>
+            <div style={{ marginTop: '14px', padding: '9px 12px', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-sm)', fontSize: '0.77rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', border: '1px solid var(--border)' }}>
+              <Database size={12} />
+              MongoDB User ID:&nbsp;<code style={{ color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{formData.userId}</code>
             </div>
           </div>
 
-          {/* Section 2: Skills Tag Editor */}
-          <div className="glass-card" style={{ padding: '28px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <div>
-                <h4 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Cpu size={20} color="#818cf8" /> Canonical Technical Skills Taxonomy
-                </h4>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px' }}>
-                  Skills normalized into canonical taxonomy with empirical project cross-referencing and confidence scores.
-                </p>
-              </div>
-              <span className="badge badge-pending">
-                {formData.skills.length} Skills Categorized
-              </span>
+          {/* ─ Skills Tag Editor ─ */}
+          <div style={card}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '4px' }}>
+              <div style={sectionHead}><Code2 size={16} color="var(--text-muted)" /> Canonical Technical Skills Taxonomy</div>
+              <span className="badge badge-pending">{formData.skills.length} Extracted</span>
             </div>
+            <p style={sectionSub}>
+              Normalized into taxonomy with empirical project cross-referencing and confidence scores. Queued with{' '}
+              <strong style={{ color: 'var(--amber)', fontWeight: 600 }}>Pending</strong> status for GitHub audit.
+            </p>
 
-            <div
-              style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: '8px',
-                minHeight: '60px',
-                padding: '16px',
-                background: 'rgba(15, 23, 42, 0.6)',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--border-subtle)',
-                marginBottom: '16px',
-              }}
-            >
-              {formData.skills.map((skill, idx) => {
+            <div style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '8px',
+              minHeight: '56px',
+              padding: '14px',
+              background: 'var(--bg-subtle)',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border)',
+              marginBottom: '14px',
+              alignContent: 'flex-start',
+            }}>
+              {formData.skills.map((skill, i) => {
                 const name = typeof skill === 'object' ? skill.name : skill;
                 const category = typeof skill === 'object' && skill.category ? skill.category : 'General';
                 const confidence = typeof skill === 'object' && skill.confidenceScore !== undefined ? skill.confidenceScore : 40;
-                const rationale = typeof skill === 'object' && skill.rationale ? skill.rationale : 'Pending automated code audit.';
+                const rationale = typeof skill === 'object' && skill.rationale ? skill.rationale : 'Extracted from resume. Awaiting GitHub code audit.';
                 const isHighConfidence = confidence >= 75;
 
                 return (
                   <div
-                    key={idx}
+                    key={i}
                     title={rationale}
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
-                      gap: '8px',
-                      padding: '6px 12px',
-                      background: isHighConfidence ? 'rgba(16, 185, 129, 0.12)' : 'rgba(99, 102, 241, 0.12)',
-                      border: `1px solid ${isHighConfidence ? 'rgba(16, 185, 129, 0.3)' : 'rgba(99, 102, 241, 0.3)'}`,
-                      borderRadius: '9999px',
-                      fontSize: '0.86rem',
-                      color: '#e0e7ff',
-                      cursor: 'default',
+                      gap: '7px',
+                      padding: '5px 11px',
+                      background: 'var(--bg-card)',
+                      border: `1px solid ${isHighConfidence ? 'rgba(16, 185, 129, 0.35)' : 'var(--border)'}`,
+                      borderRadius: 'var(--radius-full)',
+                      fontSize: '0.83rem',
+                      fontWeight: 500,
+                      color: 'var(--text-primary)',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
                     }}
                   >
                     <span style={{ fontWeight: 600 }}>{name}</span>
                     <span
                       style={{
-                        fontSize: '0.68rem',
+                        fontSize: '0.66rem',
                         padding: '1px 6px',
-                        background: 'rgba(56, 189, 248, 0.2)',
-                        color: '#38bdf8',
+                        background: 'rgba(56, 189, 248, 0.15)',
+                        color: '#0284c7',
                         borderRadius: '4px',
                         fontWeight: 600,
                       }}
@@ -874,10 +642,10 @@ export default function ResumeUpload() {
                     </span>
                     <span
                       style={{
-                        fontSize: '0.68rem',
+                        fontSize: '0.66rem',
                         padding: '1px 5px',
-                        background: isHighConfidence ? 'rgba(16, 185, 129, 0.25)' : 'rgba(245, 158, 11, 0.2)',
-                        color: isHighConfidence ? '#34d399' : '#fbbf24',
+                        background: isHighConfidence ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                        color: isHighConfidence ? '#059669' : '#d97706',
                         borderRadius: '4px',
                         fontWeight: 700,
                       }}
@@ -888,242 +656,131 @@ export default function ResumeUpload() {
                       type="button"
                       onClick={() => handleRemoveSkill(skill)}
                       style={{
-                        background: 'transparent',
+                        background: 'none',
                         border: 'none',
-                        color: '#94a3b8',
+                        color: 'var(--text-muted)',
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
-                        padding: '2px',
-                        fontSize: '1rem',
                         lineHeight: 1,
+                        padding: '1px',
                       }}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--red)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
                       title="Remove skill"
                     >
-                      ×
+                      <X size={12} />
                     </button>
                   </div>
                 );
               })}
-
-              {formData.skills.length === 0 && (
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+              {!formData.skills.length && (
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                   No skills listed. Type below to add technical skills.
                 </span>
               )}
             </div>
 
-            <form onSubmit={handleAddSkill} style={{ display: 'flex', gap: '10px' }}>
-              <input
-                type="text"
-                className="form-input"
-                value={newSkillInput}
+            <form onSubmit={handleAddSkill} style={{ display: 'flex', gap: '8px' }}>
+              <input type="text" className="form-input" value={newSkillInput}
                 onChange={(e) => setNewSkillInput(e.target.value)}
-                placeholder="Add another technical skill (e.g. Next.js, Docker, FastAPI, Python)..."
-                style={{ flex: 1 }}
-              />
-              <button type="submit" className="btn btn-secondary">
-                <Plus size={16} /> Add Skill
+                placeholder="Add a skill (e.g. Next.js, Docker, Python)…" style={{ flex: 1 }} />
+              <button type="submit" className="btn btn-secondary" style={{ flexShrink: 0 }}>
+                <Plus size={14} /> Add
               </button>
             </form>
           </div>
 
-          {/* Section 3: Technical Projects & Repositories */}
-          <div className="glass-card" style={{ padding: '28px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <div>
-                <h4 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <GithubIcon size={20} color="#818cf8" /> Technical Projects & Code Evidence
-                </h4>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px' }}>
-                  GitHub repos will be analyzed for commit velocity and live demo URLs tested for 200 OK uptime.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={handleAddProject}
-                style={{ fontSize: '0.85rem' }}
-              >
-                <Plus size={16} /> Add Project
+          {/* ─ Projects ─ */}
+          <div style={card}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '4px' }}>
+              <div style={sectionHead}><GithubIcon size={16} color="var(--text-muted)" /> Technical Projects</div>
+              <button type="button" className="btn btn-secondary" onClick={handleAddProject} style={{ fontSize: '0.8rem' }}>
+                <Plus size={13} /> Add Project
               </button>
             </div>
+            <p style={sectionSub}>GitHub repos will be audited; live URLs checked for uptime.</p>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              {formData.projects.map((project, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    background: 'rgba(15, 23, 42, 0.7)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '20px',
-                    position: 'relative',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                    <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#a5b4fc' }}>
-                      PROJECT #{idx + 1}
-                    </span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {formData.projects.map((proj, i) => (
+                <div key={i} style={inner}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <span style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)' }}>Project {i + 1}</span>
                     {formData.projects.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveProject(idx)}
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          color: '#f43f5e',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          fontSize: '0.8rem',
-                        }}
-                      >
-                        <Trash2 size={14} /> Remove
+                      <button type="button" onClick={() => handleRemoveProject(i)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '3px', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 500 }}
+                        onMouseEnter={e => e.currentTarget.style.color = 'var(--red)'}
+                        onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}>
+                        <Trash2 size={13} /> Remove
                       </button>
                     )}
                   </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
-                    <div className="form-group" style={{ marginBottom: '10px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label">Project Title</label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        value={project.title}
-                        onChange={(e) => handleProjectChange(idx, 'title', e.target.value)}
-                        placeholder="e.g. Distributed Task Queue"
-                      />
+                      <input type="text" className="form-input" value={proj.title}
+                        onChange={(e) => handleProjectChange(i, 'title', e.target.value)} placeholder="e.g. Task Queue System" />
                     </div>
-
-                    <div className="form-group" style={{ marginBottom: '10px' }}>
-                      <label className="form-label">Tech Stack (comma separated)</label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        value={project.techStack}
-                        onChange={(e) => handleProjectChange(idx, 'techStack', e.target.value)}
-                        placeholder="e.g. React, Node.js, Redis, Docker"
-                      />
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">Tech Stack (comma-separated)</label>
+                      <input type="text" className="form-input" value={proj.techStack}
+                        onChange={(e) => handleProjectChange(i, 'techStack', e.target.value)} placeholder="e.g. React, Node.js, Docker" />
                     </div>
-
-                    <div className="form-group" style={{ marginBottom: '10px' }}>
-                      <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <GithubIcon size={14} /> GitHub Repository URL
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <GithubIcon size={11} color="var(--text-muted)" /> GitHub URL
                       </label>
-                      <input
-                        type="url"
-                        className="form-input"
-                        value={project.githubUrl}
-                        onChange={(e) => handleProjectChange(idx, 'githubUrl', e.target.value)}
-                        placeholder="https://github.com/username/repo"
-                      />
+                      <input type="url" className="form-input" value={proj.githubUrl}
+                        onChange={(e) => handleProjectChange(i, 'githubUrl', e.target.value)} placeholder="https://github.com/user/repo" />
                     </div>
-
-                    <div className="form-group" style={{ marginBottom: '10px' }}>
-                      <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Globe size={14} /> Live Deployment Demo URL
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Globe size={11} color="var(--text-muted)" /> Live Demo URL
                       </label>
-                      <input
-                        type="url"
-                        className="form-input"
-                        value={project.liveDemoUrl}
-                        onChange={(e) => handleProjectChange(idx, 'liveDemoUrl', e.target.value)}
-                        placeholder="https://my-app.vercel.app"
-                      />
+                      <input type="url" className="form-input" value={proj.liveDemoUrl}
+                        onChange={(e) => handleProjectChange(i, 'liveDemoUrl', e.target.value)} placeholder="https://my-app.vercel.app" />
                     </div>
                   </div>
-
-                  <div className="form-group" style={{ marginTop: '6px', marginBottom: 0 }}>
-                    <label className="form-label">Objective & Architectural Summary</label>
-                    <textarea
-                      className="form-textarea"
-                      value={project.description}
-                      onChange={(e) => handleProjectChange(idx, 'description', e.target.value)}
-                      placeholder="Brief overview of functionality, engineering challenges solved, or system architecture..."
-                    />
+                  <div className="form-group" style={{ marginTop: '12px', marginBottom: 0 }}>
+                    <label className="form-label">Description</label>
+                    <textarea className="form-textarea" value={proj.description}
+                      onChange={(e) => handleProjectChange(i, 'description', e.target.value)}
+                      placeholder="Briefly describe the project, challenges solved, or architecture…" />
                   </div>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Section 4: Certifications & Verified Credentials */}
-          <div className="glass-card" style={{ padding: '28px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <div>
-                <h4 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Award size={20} color="#818cf8" /> Certifications & Badges
-                </h4>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px' }}>
-                  Add credential URLs from AWS, Google Cloud, Credly, or Coursera.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={handleAddCert}
-                style={{ fontSize: '0.85rem' }}
-              >
-                <Plus size={16} /> Add Certification
+          {/* ─ Certifications ─ */}
+          <div style={card}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '4px' }}>
+              <div style={sectionHead}><Award size={16} color="var(--text-muted)" /> Certifications</div>
+              <button type="button" className="btn btn-secondary" onClick={handleAddCert} style={{ fontSize: '0.8rem' }}>
+                <Plus size={13} /> Add
               </button>
             </div>
+            <p style={sectionSub}>Paste credential links from AWS, Google Cloud, Coursera, or Credly.</p>
 
-            {formData.certifications.length === 0 ? (
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                No certifications extracted. Click "+ Add Certification" to include credential proofs.
-              </p>
+            {!formData.certifications.length ? (
+              <div style={{ ...inner, textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                No certifications yet — click "+ Add" to include one.
+              </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                {formData.certifications.map((cert, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1.5fr 1fr 1.5fr auto',
-                      gap: '12px',
-                      alignItems: 'center',
-                      background: 'rgba(15, 23, 42, 0.6)',
-                      padding: '12px 16px',
-                      borderRadius: 'var(--radius-sm)',
-                    }}
-                  >
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={cert.title}
-                      onChange={(e) => handleCertChange(idx, 'title', e.target.value)}
-                      placeholder="Certification Title"
-                    />
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={cert.issuer}
-                      onChange={(e) => handleCertChange(idx, 'issuer', e.target.value)}
-                      placeholder="Issuer (e.g. AWS)"
-                    />
-                    <input
-                      type="url"
-                      className="form-input"
-                      value={cert.proofUrl}
-                      onChange={(e) => handleCertChange(idx, 'proofUrl', e.target.value)}
-                      placeholder="Verification URL"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveCert(idx)}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: '#f43f5e',
-                        cursor: 'pointer',
-                      }}
-                      title="Remove"
-                    >
-                      <Trash2 size={16} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {formData.certifications.map((cert, i) => (
+                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1.5fr auto', gap: '8px', alignItems: 'center', ...inner, padding: '10px 12px' }}>
+                    <input type="text" className="form-input" value={cert.title}
+                      onChange={(e) => handleCertChange(i, 'title', e.target.value)} placeholder="Certification Title" />
+                    <input type="text" className="form-input" value={cert.issuer}
+                      onChange={(e) => handleCertChange(i, 'issuer', e.target.value)} placeholder="Issuer (e.g. AWS)" />
+                    <input type="url" className="form-input" value={cert.proofUrl}
+                      onChange={(e) => handleCertChange(i, 'proofUrl', e.target.value)} placeholder="Verification URL" />
+                    <button type="button" onClick={() => handleRemoveCert(i)}
+                      style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', padding: '4px' }}
+                      onMouseEnter={e => e.currentTarget.style.color = 'var(--red)'}
+                      onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}>
+                      <Trash2 size={15} />
                     </button>
                   </div>
                 ))}
@@ -1131,241 +788,110 @@ export default function ResumeUpload() {
             )}
           </div>
 
-          {/* Section 5: Stage 3 Submission Bar */}
-          <div
-            className="glass-card"
-            style={{
-              padding: '24px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: '16px',
-              background: 'rgba(18, 26, 44, 0.95)',
-              border: '1px solid rgba(99, 102, 241, 0.3)',
-            }}
-          >
+          {/* ─ Submit ─ */}
+          <div style={{ ...card, padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
             <div>
-              <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff' }}>
-                Ready to finalize candidate profile?
-              </div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                This performs an upsert in MongoDB, maps raw skills to pending verification, and generates dynamic score booster tasks.
-              </div>
+              <div style={{ fontSize: '0.93rem', fontWeight: 600, letterSpacing: '-0.015em', marginBottom: '3px' }}>Ready to finalise your profile?</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Skills will be verified against your GitHub repositories.</div>
             </div>
-
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={handleConfirmProfile}
-              disabled={stage === 'saving'}
-              style={{ padding: '12px 28px', fontSize: '1.05rem' }}
-            >
-              {stage === 'saving' ? (
-                <>
-                  <RefreshCw size={18} className="animate-spin" /> Saving to MongoDB...
-                </>
-              ) : (
-                <>
-                  Confirm & Save Profile <ArrowRight size={18} />
-                </>
-              )}
+            <button type="button" className="btn btn-primary" onClick={handleConfirmProfile} disabled={stage === 'saving'} style={{ padding: '10px 22px' }}>
+              {stage === 'saving' ? <><RefreshCw size={15} className="animate-spin" /> Saving…</> : <>Confirm &amp; Save <ArrowRight size={15} /></>}
             </button>
           </div>
         </div>
       )}
 
-      {/* STAGE 3: Success State & MongoDB Persisted Confirmation */}
+      {/* ══════════════════════════════
+          STAGE 3 — Success
+         ══════════════════════════════ */}
       {stage === 'success' && successData && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          <div
-            className="glass-card glow-box"
-            style={{
-              padding: '40px 32px',
-              textAlign: 'center',
-              border: '1px solid rgba(16, 185, 129, 0.4)',
-              background: 'rgba(6, 78, 59, 0.15)',
-            }}
-          >
-            <div
-              style={{
-                width: '72px',
-                height: '72px',
-                borderRadius: '50%',
-                background: 'rgba(16, 185, 129, 0.2)',
-                border: '2px solid rgba(16, 185, 129, 0.5)',
-                color: '#34d399',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 auto 20px',
-              }}
-            >
-              <CheckCircle size={40} />
-            </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }} className="animate-fade-up">
 
-            <h2 style={{ fontSize: '2rem', marginBottom: '8px' }}>
-              Profile Confirmed & Saved to Database!
-            </h2>
-            <p style={{ color: 'var(--text-secondary)', maxWidth: '580px', margin: '0 auto 24px', fontSize: '1rem' }}>
-              Your student profile document has been successfully upserted into MongoDB. Skills have been mapped with status{' '}
-              <strong style={{ color: '#fbbf24' }}>'Pending'</strong> for automated code audit and empirical verification.
+          {/* Hero */}
+          <div style={{ ...card, textAlign: 'center', padding: '48px 32px', borderColor: '#bbf7d0' }}>
+            <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'var(--green-muted)', border: '1px solid #86efac', color: 'var(--green)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px' }}>
+              <CheckCircle size={30} strokeWidth={1.8} />
+            </div>
+            <h2 style={{ fontSize: '1.5rem', marginBottom: '8px' }}>Profile Saved!</h2>
+            <p style={{ color: 'var(--text-secondary)', maxWidth: '480px', margin: '0 auto 22px', fontSize: '0.9rem', lineHeight: 1.65 }}>
+              Your candidate profile has been persisted in MongoDB. Skills are queued with{' '}
+              <strong style={{ color: 'var(--amber)', fontWeight: 600 }}>Pending</strong> status for GitHub code audit.
             </p>
-
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '8px 18px',
-                background: 'rgba(15, 23, 42, 0.8)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: '9999px',
-                fontSize: '0.85rem',
-                color: '#94a3b8',
-              }}
-            >
-              MongoDB Profile ID: <code style={{ color: '#34d399' }}>{successData._id || 'Generated'}</code>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', padding: '6px 14px', background: 'var(--bg-subtle)', border: '1px solid var(--border)', borderRadius: 'var(--radius-full)', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              <Database size={12} color="var(--green)" />
+              Profile ID:&nbsp;<code style={{ color: 'var(--green)', fontFamily: 'monospace', fontWeight: 700 }}>{successData._id || 'Generated'}</code>
             </div>
           </div>
 
-          {/* Dynamic Verification Score Card */}
-          <div className="glass-card" style={{ padding: '28px' }}>
-            <h4 style={{ fontSize: '1.2rem', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Sparkles size={20} color="#818cf8" /> Dynamic Verification Score Breakdown
-            </h4>
+          {/* Score breakdown */}
+          <div style={card}>
+            <div style={sectionHead}><Sparkles size={16} color="var(--text-muted)" /> Verification Score Breakdown</div>
+            <p style={sectionSub}>Calculated from GitHub audit, deployment checks, and credential cross-matching.</p>
 
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                gap: '16px',
-                marginBottom: '24px',
-              }}
-            >
-              <div
-                style={{
-                  background: 'rgba(15, 23, 42, 0.7)',
-                  padding: '20px',
-                  borderRadius: 'var(--radius-md)',
-                  textAlign: 'center',
-                  border: '1px solid rgba(99, 102, 241, 0.3)',
-                }}
-              >
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                  Total Verification Score
-                </div>
-                <div style={{ fontSize: '2.5rem', fontWeight: 800, color: '#818cf8', marginTop: '4px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '24px' }}>
+              {/* Total */}
+              <div style={{ ...inner, textAlign: 'center', padding: '22px 16px' }}>
+                <div style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', marginBottom: '8px' }}>Total Score</div>
+                <div style={{ fontSize: '2.6rem', fontWeight: 800, color: 'var(--brand)', lineHeight: 1, letterSpacing: '-0.04em' }}>
                   {successData.verificationScore || 0}
-                  <span style={{ fontSize: '1.2rem', color: 'var(--text-muted)' }}>/100</span>
+                  <span style={{ fontSize: '1rem', color: 'var(--text-muted)', fontWeight: 500 }}>/100</span>
                 </div>
               </div>
-
-              <div
-                style={{
-                  background: 'rgba(15, 23, 42, 0.7)',
-                  padding: '20px',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--border-subtle)',
-                }}
-              >
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                  GitHub Originality
+              {/* GitHub */}
+              <div style={{ ...inner, textAlign: 'center', padding: '22px 16px' }}>
+                <div style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', marginBottom: '8px' }}>GitHub</div>
+                <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1, letterSpacing: '-0.04em' }}>
+                  {successData.scoreBreakdown?.githubOriginalityScore ?? 0}
+                  <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 500 }}> pts</span>
                 </div>
-                <div style={{ fontSize: '1.6rem', fontWeight: 700, color: '#38bdf8', marginTop: '4px' }}>
-                  {successData.scoreBreakdown ? successData.scoreBreakdown.githubOriginalityScore : 0} pts
-                </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                  Based on repo commit audit
-                </div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '5px' }}>Commit audit</div>
               </div>
-
-              <div
-                style={{
-                  background: 'rgba(15, 23, 42, 0.7)',
-                  padding: '20px',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--border-subtle)',
-                }}
-              >
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                  Live Deployment
+              {/* Live deployment */}
+              <div style={{ ...inner, textAlign: 'center', padding: '22px 16px' }}>
+                <div style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', marginBottom: '8px' }}>Deployment</div>
+                <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1, letterSpacing: '-0.04em' }}>
+                  {successData.scoreBreakdown?.liveDeploymentScore ?? 0}
+                  <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 500 }}> pts</span>
                 </div>
-                <div style={{ fontSize: '1.6rem', fontWeight: 700, color: '#34d399', marginTop: '4px' }}>
-                  {successData.scoreBreakdown ? successData.scoreBreakdown.liveDeploymentScore : 0} pts
-                </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                  Based on live URL health pings
-                </div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '5px' }}>URL health pings</div>
               </div>
-
-              <div
-                style={{
-                  background: 'rgba(15, 23, 42, 0.7)',
-                  padding: '20px',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--border-subtle)',
-                }}
-              >
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                  Semantic Claims
+              {/* Semantic */}
+              <div style={{ ...inner, textAlign: 'center', padding: '22px 16px' }}>
+                <div style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', marginBottom: '8px' }}>Semantic</div>
+                <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1, letterSpacing: '-0.04em' }}>
+                  {successData.scoreBreakdown?.semanticClaimScore ?? 0}
+                  <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 500 }}> pts</span>
                 </div>
-                <div style={{ fontSize: '1.6rem', fontWeight: 700, color: '#fbbf24', marginTop: '4px' }}>
-                  {successData.scoreBreakdown ? successData.scoreBreakdown.semanticClaimScore : 0} pts
-                </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                  Skills & credentials cross-match
-                </div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '5px' }}>Credentials match</div>
               </div>
             </div>
 
-            {/* Mapped Skills Status List */}
-            <div style={{ marginTop: '20px' }}>
-              <div style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '10px', color: 'var(--text-secondary)' }}>
-                Persisted Skills ({Array.isArray(successData.skills) ? successData.skills.length : 0})
+            {/* Skills */}
+            {Array.isArray(successData.skills) && successData.skills.length > 0 && (
+              <div>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  Persisted Skills ({successData.skills.length})
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '7px' }}>
+                  {successData.skills.map((skill, i) => (
+                    <div key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 11px', background: 'var(--bg-subtle)', border: '1px solid var(--border)', borderRadius: 'var(--radius-full)', fontSize: '0.82rem', fontWeight: 500 }}>
+                      {skill.name}
+                      <span className="badge badge-pending" style={{ padding: '1px 6px', fontSize: '0.6rem' }}>{skill.verifiedStatus || 'Pending'}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {(Array.isArray(successData.skills) ? successData.skills : []).map((skill, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      padding: '6px 14px',
-                      background: 'rgba(15, 23, 42, 0.8)',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: 'var(--radius-sm)',
-                      fontSize: '0.85rem',
-                    }}
-                  >
-                    <span style={{ fontWeight: 600 }}>{skill.name}</span>
-                    <span className="badge badge-pending">
-                      {skill.verifiedStatus || 'Pending'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            )}
           </div>
 
-          {/* Action Bar */}
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', marginTop: '12px' }}>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={handleReset}
-            >
-              <RefreshCw size={16} /> Upload Another Resume
+          {/* Actions */}
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn-secondary" onClick={handleReset}>
+              <RefreshCw size={14} /> Upload Another
             </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => {
-                alert(`Profile verified for user: ${successData.userId}\nVerification Score: ${successData.verificationScore}/100\nTotal Skills: ${successData.skills?.length || 0}\nTotal Projects: ${successData.projects?.length || 0}`);
-              }}
-            >
-              <CheckCircle size={16} /> View Placement Summary
+            <button type="button" className="btn btn-primary"
+              onClick={() => alert(`Verification Score: ${successData.verificationScore}/100\nSkills: ${successData.skills?.length || 0}\nProjects: ${successData.projects?.length || 0}`)}>
+              <CheckCircle size={14} /> View Summary
             </button>
           </div>
         </div>
