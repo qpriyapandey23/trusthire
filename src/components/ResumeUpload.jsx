@@ -19,6 +19,11 @@ import {
   Shield,
   Code2,
   Database,
+  PenLine,
+  User,
+  Hash,
+  BookOpen,
+  Calendar,
 } from 'lucide-react';
 
 const GithubIcon = ({ size = 18, color = 'currentColor' }) => (
@@ -47,9 +52,11 @@ export default function ResumeUpload() {
 
   const [formData, setFormData] = useState({
     userId: '66d0c7f29a34bc123456789a',
+    fullName: '',
     rollNumber: '',
     branch: '',
     cgpa: 8.5,
+    graduationYear: '',
     githubUsername: '',
     skills: [],
     projects: [],
@@ -59,6 +66,13 @@ export default function ResumeUpload() {
   });
 
   const [newSkillInput, setNewSkillInput] = useState('');
+  const [reviewSource, setReviewSource] = useState('ai'); // 'ai' | 'manual'
+  const [manualFields, setManualFields] = useState({
+    fullName: '',
+    rollNumber: '',
+    branch: '',
+    graduationYear: '',
+  });
   const fileInputRef = useRef(null);
 
   /* ── Drag & Drop ── */
@@ -133,9 +147,11 @@ export default function ResumeUpload() {
       // Populate Form State
       setFormData({
         userId: formData.userId || '66d0c7f29a34bc123456789a',
+        fullName: ex.fullName || '',
         rollNumber: ex.rollNumber || 'CS' + Math.floor(100000 + Math.random() * 900000),
         branch: ex.branch || 'Computer Science and Engineering',
         cgpa: ex.cgpa !== undefined ? Number(ex.cgpa) : 8.2,
+        graduationYear: ex.graduationYear || '',
         githubUsername: ex.githubUsername || (ex.fullName ? ex.fullName.toLowerCase().replace(/\s+/g, '-') : ''),
         skills: normalizedSkills.length > 0 ? normalizedSkills : defaultSkills,
         projects: Array.isArray(ex.projects) && ex.projects.length > 0
@@ -153,6 +169,7 @@ export default function ResumeUpload() {
         rawResumeText: result.rawText || '',
         resumeFileName: file.name,
       });
+      setReviewSource('ai');
       setStage('review');
     } catch (err) {
       setErrorMessage(err.message || 'An error occurred. Please check the backend connection.');
@@ -237,7 +254,41 @@ export default function ResumeUpload() {
     }
   };
 
-  const handleReset = () => { setSelectedFile(null); setErrorMessage(''); setSuccessData(null); setStage('upload'); };
+  const handleReset = () => {
+    setSelectedFile(null);
+    setErrorMessage('');
+    setSuccessData(null);
+    setSpatialMetadata(null);
+    setAnchorsData(null);
+    setReviewSource('ai');
+    setManualFields({ fullName: '', rollNumber: '', branch: '', graduationYear: '' });
+    setStage('upload');
+  };
+
+  /* ── Manual Entry ── */
+  const handleManualEntry = () => {
+    if (!manualFields.fullName.trim()) {
+      setErrorMessage('Please enter your full name to continue with manual entry.');
+      return;
+    }
+    setErrorMessage('');
+    setFormData({
+      userId: '66d0c7f29a34bc123456789a',
+      fullName: manualFields.fullName.trim(),
+      rollNumber: manualFields.rollNumber.trim(),
+      branch: manualFields.branch.trim(),
+      cgpa: 0,
+      graduationYear: manualFields.graduationYear,
+      githubUsername: '',
+      skills: [],
+      projects: [],
+      certifications: [],
+      rawResumeText: '',
+      resumeFileName: '',
+    });
+    setReviewSource('manual');
+    setStage('review');
+  };
 
   /* ── Helpers ── */
   const steps = ['Upload Resume', 'Review Details', 'Save Profile'];
@@ -275,7 +326,7 @@ export default function ResumeUpload() {
   };
 
   return (
-    <div style={{ maxWidth: '820px', margin: '0 auto', padding: '40px 20px 64px' }}>
+    <div style={{ maxWidth: '1040px', margin: '0 auto', padding: '40px 20px 64px' }}>
 
       {/* ── Page heading ── */}
       <div style={{ textAlign: 'center', marginBottom: '40px' }}>
@@ -344,66 +395,196 @@ export default function ResumeUpload() {
       )}
 
       {/* ══════════════════════════════
-          STAGE 1 — Upload
+          STAGE 1 — Upload  (2-column)
          ══════════════════════════════ */}
       {stage === 'upload' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {/* Drop zone */}
-          <div
-            onDragEnter={handleDrag} onDragLeave={handleDrag}
-            onDragOver={handleDrag} onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            style={{
-              border: `2px dashed ${dragActive ? 'var(--brand)' : 'var(--border)'}`,
-              borderRadius: 'var(--radius-lg)',
-              padding: '60px 32px',
-              textAlign: 'center',
-              background: dragActive ? 'var(--brand-muted)' : 'var(--bg-card)',
-              cursor: 'pointer',
-              transition: 'border-color 0.15s, background 0.15s',
-            }}
-          >
-            <input ref={fileInputRef} type="file" accept=".pdf,application/pdf"
-              style={{ display: 'none' }} onChange={handleFileInputChange} />
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+          gap: '24px',
+          alignItems: 'stretch',
+        }}>
 
-            <div style={{
-              width: '56px', height: '56px', borderRadius: 'var(--radius-md)',
-              background: 'var(--bg-muted)', border: '1px solid var(--border)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '0 auto 18px', transition: 'background 0.15s',
-            }}>
-              <UploadCloud size={26} color={dragActive ? 'var(--brand)' : 'var(--text-secondary)'} strokeWidth={1.8} />
+          {/* ── Left Column: Upload Resume ── */}
+          <div style={{ ...card, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {/* Card header */}
+            <div style={{ padding: '22px 24px 18px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  width: '36px', height: '36px', borderRadius: 'var(--radius-md)',
+                  background: 'var(--brand-muted)', border: '1px solid #bfdbfe',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                }}>
+                  <UploadCloud size={17} color="var(--brand)" strokeWidth={2} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1rem', fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1.2, marginBottom: '2px' }}>Upload Resume</h3>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 400 }}>AI-powered extraction</p>
+                </div>
+              </div>
             </div>
 
-            <h2 style={{ fontSize: '1.2rem', marginBottom: '6px', letterSpacing: '-0.02em' }}>
-              {dragActive ? 'Drop to upload' : 'Drop your PDF resume here'}
-            </h2>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.87rem', marginBottom: '22px' }}>
-              or click to browse — PDF only, up to 10 MB
-            </p>
+            {/* Dropzone */}
+            <div style={{ padding: '20px 24px', flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div
+                id="resume-dropzone"
+                onDragEnter={handleDrag} onDragLeave={handleDrag}
+                onDragOver={handleDrag} onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                style={{
+                  border: `2px dashed ${dragActive ? 'var(--brand)' : 'var(--border)'}`,
+                  borderRadius: 'var(--radius-md)',
+                  padding: '36px 24px',
+                  textAlign: 'center',
+                  background: dragActive ? 'var(--brand-muted)' : 'var(--bg-subtle)',
+                  cursor: 'pointer',
+                  transition: 'border-color 0.2s, background 0.2s',
+                  flex: 1,
+                }}
+              >
+                <input ref={fileInputRef} type="file" accept=".pdf,application/pdf"
+                  style={{ display: 'none' }} onChange={handleFileInputChange} />
 
-            <button type="button" className="btn btn-primary" style={{ pointerEvents: 'none' }}>
-              <FileText size={15} /> Browse Files
-            </button>
+                <div style={{
+                  width: '48px', height: '48px', borderRadius: 'var(--radius-md)',
+                  background: dragActive ? 'var(--brand-muted)' : 'var(--bg-card)',
+                  border: `1px solid ${dragActive ? '#bfdbfe' : 'var(--border)'}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  margin: '0 auto 14px', transition: 'all 0.2s',
+                }}>
+                  <UploadCloud size={22} color={dragActive ? 'var(--brand)' : 'var(--text-secondary)'} strokeWidth={1.8} />
+                </div>
+
+                <p style={{ fontWeight: 600, fontSize: '0.92rem', marginBottom: '5px', color: 'var(--text-primary)' }}>
+                  {dragActive ? 'Drop to upload' : 'Drag & drop your PDF here'}
+                </p>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                  or click to browse — PDF / DOCX, up to 10 MB
+                </p>
+              </div>
+
+              {/* Feature pills */}
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                {[
+                  { icon: <Cpu size={11} />, label: 'Gemini AI' },
+                  { icon: <GithubIcon size={11} />, label: 'GitHub Audit' },
+                  { icon: <Shield size={11} />, label: 'Verification' },
+                ].map(({ icon, label }) => (
+                  <div key={label} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '5px',
+                    padding: '4px 10px', borderRadius: 'var(--radius-full)',
+                    background: 'var(--bg-muted)', border: '1px solid var(--border)',
+                    fontSize: '0.73rem', fontWeight: 500, color: 'var(--text-muted)',
+                  }}>
+                    {icon} {label}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Parse Resume CTA */}
+            <div style={{ padding: '0 24px 24px' }}>
+              <button
+                id="btn-parse-resume"
+                type="button"
+                className="btn btn-primary"
+                onClick={() => fileInputRef.current?.click()}
+                style={{ width: '100%', justifyContent: 'center', padding: '11px 20px', fontSize: '0.9rem' }}
+              >
+                <FileText size={15} /> Parse Resume
+              </button>
+            </div>
           </div>
 
-          {/* Feature pills */}
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            {[
-              { icon: <Cpu size={13} />, label: 'Gemini AI Extraction' },
-              { icon: <GithubIcon size={13} />, label: 'GitHub Code Audit' },
-              { icon: <Shield size={13} />, label: 'Claim Verification' },
-            ].map(({ icon, label }) => (
-              <div key={label} style={{
-                display: 'flex', alignItems: 'center', gap: '6px',
-                padding: '5px 12px', borderRadius: 'var(--radius-full)',
-                background: 'var(--bg-card)', border: '1px solid var(--border)',
-                fontSize: '0.78rem', fontWeight: 500, color: 'var(--text-secondary)',
-              }}>
-                <span style={{ color: 'var(--text-muted)' }}>{icon}</span>
-                {label}
+          {/* ── Right Column: Manual Entry ── */}
+          <div style={{ ...card, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {/* Card header */}
+            <div style={{ padding: '22px 24px 18px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  width: '36px', height: '36px', borderRadius: 'var(--radius-md)',
+                  background: 'var(--bg-muted)', border: '1px solid var(--border)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                }}>
+                  <PenLine size={17} color="var(--text-secondary)" strokeWidth={2} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1rem', fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1.2, marginBottom: '2px' }}>Enter Details Manually</h3>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 400 }}>Fill in your information</p>
+                </div>
               </div>
-            ))}
+            </div>
+
+            {/* Form fields */}
+            <div style={{ padding: '20px 24px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <div className="form-group">
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <User size={11} color="var(--text-muted)" /> Full Name
+                </label>
+                <input
+                  id="manual-full-name"
+                  type="text"
+                  className="form-input"
+                  value={manualFields.fullName}
+                  onChange={(e) => setManualFields({ ...manualFields, fullName: e.target.value })}
+                  placeholder="e.g. Priya Pandey"
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <Hash size={11} color="var(--text-muted)" /> College Roll No
+                </label>
+                <input
+                  id="manual-roll-number"
+                  type="text"
+                  className="form-input"
+                  value={manualFields.rollNumber}
+                  onChange={(e) => setManualFields({ ...manualFields, rollNumber: e.target.value })}
+                  placeholder="e.g. 21BCSE104"
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <BookOpen size={11} color="var(--text-muted)" /> Branch / Department
+                </label>
+                <input
+                  id="manual-branch"
+                  type="text"
+                  className="form-input"
+                  value={manualFields.branch}
+                  onChange={(e) => setManualFields({ ...manualFields, branch: e.target.value })}
+                  placeholder="e.g. Computer Science and Engineering"
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <Calendar size={11} color="var(--text-muted)" /> Graduation Year
+                </label>
+                <input
+                  id="manual-graduation-year"
+                  type="number"
+                  className="form-input"
+                  value={manualFields.graduationYear}
+                  min="2020"
+                  max="2032"
+                  onChange={(e) => setManualFields({ ...manualFields, graduationYear: e.target.value })}
+                  placeholder="e.g. 2025"
+                />
+              </div>
+            </div>
+
+            {/* Start Manual Entry CTA */}
+            <div style={{ padding: '0 24px 24px' }}>
+              <button
+                id="btn-start-manual-entry"
+                type="button"
+                className="btn btn-secondary"
+                onClick={handleManualEntry}
+                style={{ width: '100%', justifyContent: 'center', padding: '11px 20px', fontSize: '0.9rem', borderColor: 'var(--border)' }}
+              >
+                <PenLine size={15} /> Start Manual Entry
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -443,13 +624,22 @@ export default function ResumeUpload() {
           <div style={{ ...card, padding: '18px 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
-                <h3 style={{ fontSize: '0.97rem', letterSpacing: '-0.02em' }}>Review Extracted Credentials</h3>
-                <span className="badge badge-primary"><Sparkles size={10} /> AI Extracted</span>
+                <h3 style={{ fontSize: '0.97rem', letterSpacing: '-0.02em' }}>
+                  {reviewSource === 'manual' ? 'Build Your Profile' : 'Review Extracted Credentials'}
+                </h3>
+                {reviewSource === 'manual'
+                  ? <span className="badge badge-muted"><PenLine size={10} /> Manual Entry</span>
+                  : <span className="badge badge-primary"><Sparkles size={10} /> AI Extracted</span>
+                }
               </div>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Verify and amend details before finalising.</p>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                {reviewSource === 'manual'
+                  ? 'Add your skills, projects, and certifications below then save your profile.'
+                  : 'Verify and amend details before finalising.'}
+              </p>
             </div>
             <button type="button" className="btn btn-secondary" onClick={handleReset} style={{ fontSize: '0.8rem' }}>
-              <ArrowLeft size={13} /> Re-upload
+              <ArrowLeft size={13} /> {reviewSource === 'manual' ? 'Go Back' : 'Re-upload'}
             </button>
           </div>
 
@@ -548,14 +738,33 @@ export default function ResumeUpload() {
             <p style={sectionSub}>Core credentials extracted from your resume.</p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '14px' }}>
               <div className="form-group">
-                <label className="form-label">Roll Number / ID</label>
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <User size={11} color="var(--text-muted)" /> Full Name
+                </label>
+                <input type="text" className="form-input" value={formData.fullName}
+                  onChange={(e) => setFormData({ ...formData, fullName: e.target.value })} placeholder="e.g. Priya Pandey" />
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <Hash size={11} color="var(--text-muted)" /> Roll Number / ID
+                </label>
                 <input type="text" className="form-input" value={formData.rollNumber}
                   onChange={(e) => setFormData({ ...formData, rollNumber: e.target.value })} placeholder="e.g. 21BCSE104" />
               </div>
               <div className="form-group">
-                <label className="form-label">Degree Branch</label>
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <BookOpen size={11} color="var(--text-muted)" /> Degree Branch
+                </label>
                 <input type="text" className="form-input" value={formData.branch}
                   onChange={(e) => setFormData({ ...formData, branch: e.target.value })} placeholder="e.g. Computer Science" />
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <Calendar size={11} color="var(--text-muted)" /> Graduation Year
+                </label>
+                <input type="number" className="form-input" value={formData.graduationYear}
+                  min="2020" max="2032"
+                  onChange={(e) => setFormData({ ...formData, graduationYear: e.target.value })} placeholder="e.g. 2025" />
               </div>
               <div className="form-group">
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>

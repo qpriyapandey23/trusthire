@@ -15,7 +15,7 @@ export default function App() {
         zIndex: 50,
       }}>
         <div style={{
-          maxWidth: '900px',
+          maxWidth: '1100px',
           margin: '0 auto',
           padding: '0 24px',
           height: '56px',
@@ -73,7 +73,7 @@ export default function App() {
         background: '#ffffff',
       }}>
         <div style={{
-          maxWidth: '900px',
+          maxWidth: '1100px',
           margin: '0 auto',
           display: 'flex',
           justifyContent: 'space-between',
