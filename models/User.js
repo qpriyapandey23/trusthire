@@ -42,6 +42,25 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    // OTP fields for password reset — otp stores a bcrypt hash, never plaintext
+    otp: {
+      type: String,
+      default: null,
+    },
+    otpExpires: {
+      type: Date,
+      default: null,
+    },
+    // Brute-force protection: count wrong OTP attempts
+    otpAttempts: {
+      type: Number,
+      default: 0,
+    },
+    // Resend rate limiting: timestamp of the last OTP send
+    otpLastSentAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -69,10 +88,14 @@ userSchema.methods.comparePassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.passwordHash);
 };
 
-// Don't leak passwordHash in JSON serialization
+// Don't leak passwordHash or OTP fields in JSON serialization
 userSchema.methods.toJSON = function () {
   const userObject = this.toObject();
   delete userObject.passwordHash;
+  delete userObject.otp;
+  delete userObject.otpExpires;
+  delete userObject.otpAttempts;
+  delete userObject.otpLastSentAt;
   return userObject;
 };
 

@@ -19,7 +19,8 @@ const skillSchema = new mongoose.Schema(
     },
     rationale: {
       type: String,
-      default: 'Pending automated GitHub code audit and semantic verification.',
+      default:
+        'Pending automated GitHub code audit and semantic verification.',
     },
     confidenceScore: {
       type: Number,
@@ -61,18 +62,39 @@ const projectSchema = new mongoose.Schema(
     ],
     githubAudit: {
       checkedAt: Date,
-      repoExists: { type: Boolean, default: false },
-      totalCommits: { type: Number, default: 0 },
-      authorCommitCount: { type: Number, default: 0 },
-      authorshipPercent: { type: Number, default: 0 },
-      isFork: { type: Boolean, default: false },
+      repoExists: {
+        type: Boolean,
+        default: false,
+      },
+      totalCommits: {
+        type: Number,
+        default: 0,
+      },
+      authorCommitCount: {
+        type: Number,
+        default: 0,
+      },
+      authorshipPercent: {
+        type: Number,
+        default: 0,
+      },
+      isFork: {
+        type: Boolean,
+        default: false,
+      },
       languages: [String],
-      stars: { type: Number, default: 0 },
+      stars: {
+        type: Number,
+        default: 0,
+      },
       auditSummary: String,
     },
     liveDemoAudit: {
       checkedAt: Date,
-      isOnline: { type: Boolean, default: false },
+      isOnline: {
+        type: Boolean,
+        default: false,
+      },
       httpStatusCode: Number,
       responseTimeMs: Number,
       lastCheckedError: String,
@@ -113,42 +135,56 @@ const studentProfileSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true,
-      unique: true,
+
+      // IMPORTANT:
+      // Do not use unique: true.
+      // One student can have multiple resume profile documents.
+      index: true,
     },
+
     collegeId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'College',
       default: null,
       index: true,
     },
+
     rollNumber: {
       type: String,
       trim: true,
       default: '',
     },
+
     branch: {
       type: String,
       trim: true,
       default: '',
     },
+
     graduationYear: {
       type: Number,
       default: new Date().getFullYear(),
     },
+
     cgpa: {
       type: Number,
       min: 0,
       max: 10,
       default: 0,
     },
+
     githubUsername: {
       type: String,
       trim: true,
       default: '',
     },
+
     skills: [skillSchema],
+
     projects: [projectSchema],
+
     certifications: [certificationSchema],
+
     verificationScore: {
       type: Number,
       min: 0,
@@ -156,27 +192,52 @@ const studentProfileSchema = new mongoose.Schema(
       default: 0,
       index: true,
     },
+
     scoreBreakdown: {
-      githubOriginalityScore: { type: Number, default: 0 },
-      liveDeploymentScore: { type: Number, default: 0 },
-      semanticClaimScore: { type: Number, default: 0 },
-      cgpaAcademicScore: { type: Number, default: 0 },
-      lastEvaluatedAt: { type: Date, default: null },
+      githubOriginalityScore: {
+        type: Number,
+        default: 0,
+      },
+      liveDeploymentScore: {
+        type: Number,
+        default: 0,
+      },
+      semanticClaimScore: {
+        type: Number,
+        default: 0,
+      },
+      cgpaAcademicScore: {
+        type: Number,
+        default: 0,
+      },
+      lastEvaluatedAt: {
+        type: Date,
+        default: null,
+      },
     },
+
     rawResumeText: {
       type: String,
       default: '',
     },
+
     resumeFileName: {
       type: String,
       default: '',
     },
+
     manualOverride: {
-      isOverridden: { type: Boolean, default: false },
+      isOverridden: {
+        type: Boolean,
+        default: false,
+      },
       originalScore: Number,
       overrideScore: Number,
       reason: String,
-      overriddenBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      overriddenBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
       overriddenAt: Date,
     },
   },
@@ -185,8 +246,21 @@ const studentProfileSchema = new mongoose.Schema(
   }
 );
 
-// Helpful index for recruiter discovery filtered by verificationScore and college
-studentProfileSchema.index({ collegeId: 1, verificationScore: -1 });
+// Recruiter discovery
+studentProfileSchema.index({
+  collegeId: 1,
+  verificationScore: -1,
+});
 
-const StudentProfile = mongoose.model('StudentProfile', studentProfileSchema);
+// Retrieve a student's profiles, newest first
+studentProfileSchema.index({
+  userId: 1,
+  createdAt: -1,
+});
+
+const StudentProfile = mongoose.model(
+  'StudentProfile',
+  studentProfileSchema
+);
+
 module.exports = StudentProfile;

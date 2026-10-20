@@ -1,11 +1,10 @@
+// Load environment variables immediately before any other imports
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
-const dotenv = require('dotenv');
 const connectDB = require('./config/db');
-
-// Load environment variables
-dotenv.config();
 
 // Initialize Express application
 const app = express();
@@ -61,6 +60,9 @@ app.get('/api/health', (req, res) => {
 const profileRoutes = require('./routes/profileRoutes');
 app.use('/api/profile', profileRoutes);
 
+const authRoutes = require('./routes/authRoutes');
+app.use('/api/auth', authRoutes);
+
 // Serve Static Frontend Assets (if built)
 const path = require('path');
 const fs = require('fs');
@@ -106,6 +108,20 @@ const server = app.listen(PORT, () => {
   console.log(` Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(` Health check: http://localhost:${PORT}/api/health`);
   console.log(`====================================================`);
+});
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\n[Error] Port ${PORT} is already in use.`);
+    console.error(`  Run this to find and kill the process:\n`);
+    console.error(`    netstat -ano | findstr :${PORT}`);
+    console.error(`    taskkill /PID <PID> /F\n`);
+    console.error(`  Or kill all node processes with:\n`);
+    console.error(`    taskkill /F /IM node.exe\n`);
+    process.exit(1);
+  } else {
+    throw err;
+  }
 });
 
 // Handle unhandled promise rejections

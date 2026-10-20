@@ -1,8 +1,65 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import ResumeUpload from './components/ResumeUpload';
-import { ShieldCheck, ArrowUpRight } from 'lucide-react';
+import AuthPage from './components/AuthPage';
+import { ShieldCheck, LogOut, User } from 'lucide-react';
 
 export default function App() {
+  // Auth state — persist token in sessionStorage (or localStorage if remember-me used)
+  const [authUser, setAuthUser] = useState(null);
+  const [authToken, setAuthToken] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  // On mount: restore auth from localStorage (remember-me)
+  useEffect(() => {
+    const storedToken = localStorage.getItem('trusthire_token');
+    const storedUser = localStorage.getItem('trusthire_user');
+    if (storedToken && storedUser) {
+      try {
+        setAuthToken(storedToken);
+        setAuthUser(JSON.parse(storedUser));
+      } catch {
+        localStorage.removeItem('trusthire_token');
+        localStorage.removeItem('trusthire_user');
+      }
+    }
+    setAuthChecked(true);
+  }, []);
+
+  const handleAuthSuccess = (user, token) => {
+    setAuthUser(user);
+    setAuthToken(token);
+    // Persist if remember-me was set (AuthPage sets this in localStorage already)
+    localStorage.setItem('trusthire_user', JSON.stringify(user));
+  };
+
+  const handleLogout = async () => {
+    try {
+      await fetch('http://localhost:5000/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch (_) { /* ignore */ }
+    localStorage.removeItem('trusthire_token');
+    localStorage.removeItem('trusthire_user');
+    setAuthUser(null);
+    setAuthToken(null);
+  };
+
+  // Don't flash before we've checked stored auth
+  if (!authChecked) return null;
+
+  // ── Unauthenticated: Show Auth Page ───────────────────────────────────────
+  if (!authUser) {
+    return <AuthPage onAuthSuccess={handleAuthSuccess} />;
+  }
+
+  // ── Authenticated: Show Main App ───────────────────────────────────────────
+  const roleLabel = {
+    student: 'Student',
+    tpo_admin: 'TPO Admin',
+    recruiter: 'Recruiter',
+  }[authUser.role] || authUser.role;
+
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
 
@@ -23,66 +80,84 @@ export default function App() {
           alignItems: 'center',
           justifyContent: 'space-between',
         }}>
+          {/* Logo */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              background: 'var(--brand)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
+              width: '32px', height: '32px', borderRadius: '8px',
+              background: 'var(--brand)', display: 'flex',
+              alignItems: 'center', justifyContent: 'center', flexShrink: 0,
             }}>
               <ShieldCheck size={18} color="#fff" strokeWidth={2.5} />
             </div>
             <div>
               <div style={{
-                fontSize: '1rem',
-                fontWeight: 700,
-                letterSpacing: '-0.025em',
-                color: 'var(--text-primary)',
-                lineHeight: 1.1,
-              }}>
-                TrustHire
-              </div>
+                fontSize: '1rem', fontWeight: 700,
+                letterSpacing: '-0.025em', color: 'var(--text-primary)', lineHeight: 1.1,
+              }}>TrustHire</div>
               <div style={{
-                fontSize: '0.6rem',
-                color: 'var(--text-muted)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.08em',
-                fontWeight: 600,
-                lineHeight: 1,
+                fontSize: '0.6rem', color: 'var(--brand)',
+                textTransform: 'uppercase', letterSpacing: '0.08em',
+                fontWeight: 600, lineHeight: 1,
+              }}>Verified Talent Intelligence</div>
+            </div>
+          </div>
+
+          {/* User pill + logout */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '8px',
+              background: '#f3f4f6', borderRadius: '999px',
+              padding: '5px 12px 5px 8px',
+            }}>
+              <div style={{
+                width: '26px', height: '26px', borderRadius: '50%',
+                background: 'var(--brand)', display: 'flex',
+                alignItems: 'center', justifyContent: 'center',
               }}>
-                Placement Intelligence
+                <User size={13} color="#fff" />
+              </div>
+              <div style={{ lineHeight: 1.3 }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#111' }}>
+                  {authUser.name || authUser.email}
+                </div>
+                <div style={{ fontSize: '0.65rem', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  {roleLabel}
+                </div>
               </div>
             </div>
+            <button
+              onClick={handleLogout}
+              id="logout-btn"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '5px',
+                background: 'none', border: '1px solid #e5e7eb',
+                borderRadius: '7px', padding: '6px 10px', cursor: 'pointer',
+                fontSize: '0.78rem', color: '#6b7280', fontFamily: 'inherit',
+                fontWeight: 500, transition: 'background 0.15s',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = '#f9fafb'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+            >
+              <LogOut size={13} /> Sign out
+            </button>
           </div>
         </div>
       </header>
 
       {/* ── Main ── */}
       <main style={{ flex: 1 }}>
-        <ResumeUpload />
+        <ResumeUpload authToken={authToken} authUser={authUser} />
       </main>
 
       {/* ── Footer ── */}
-      <footer style={{
-        borderTop: '1px solid var(--border)',
-        padding: '18px 24px',
-        background: '#ffffff',
-      }}>
+      <footer style={{ borderTop: '1px solid var(--border)', padding: '18px 24px', background: '#ffffff' }}>
         <div style={{
-          maxWidth: '1100px',
-          margin: '0 auto',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '8px',
+          maxWidth: '1100px', margin: '0 auto',
+          display: 'flex', justifyContent: 'space-between',
+          alignItems: 'center', flexWrap: 'wrap', gap: '8px',
         }}>
           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            © {new Date().getFullYear()} TrustHire
+            © {new Date().getFullYear()} TrustHire &nbsp;·&nbsp; Evidence-Based Placement Intelligence
           </span>
         </div>
       </footer>

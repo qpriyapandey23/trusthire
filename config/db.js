@@ -7,9 +7,12 @@ const mongoose = require('mongoose');
 const connectDB = async () => {
   try {
     const mongoURI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/trusthire';
-    
+    console.log('[Database Debug] URI source:', process.env.MONGO_URI
+      ? 'MONGO_URI environment variable'
+      : 'Fallback URI');
+
     console.log(`[Database] Attempting connection to MongoDB at: ${mongoURI}`);
-    
+
     const conn = await mongoose.connect(mongoURI, {
       serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of hanging
     });
