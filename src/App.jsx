@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ResumeUpload from './components/ResumeUpload';
 import AuthPage from './components/AuthPage';
 import { ShieldCheck, LogOut, User } from 'lucide-react';
+import { StudentDashboard, AdminDashboard } from './components/Dashboards';
 
 export default function App() {
   // Auth state — persist token in sessionStorage (or localStorage if remember-me used)
@@ -51,6 +52,14 @@ export default function App() {
   // ── Unauthenticated: Show Auth Page ───────────────────────────────────────
   if (!authUser) {
     return <AuthPage onAuthSuccess={handleAuthSuccess} />;
+  }
+
+  if (window.location.pathname === '/dashboard/student') {
+    return <StudentDashboard user={authUser} />;
+  }
+
+  if (window.location.pathname === '/dashboard/admin') {
+    return <AdminDashboard user={authUser} />;
   }
 
   // ── Authenticated: Show Main App ───────────────────────────────────────────
