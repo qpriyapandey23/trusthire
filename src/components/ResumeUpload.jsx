@@ -41,7 +41,7 @@ const GithubIcon = ({ size = 18, color = 'currentColor' }) => (
  * Stage 2: Interactive Review & Manual Adjustments
  * Stage 3: Confirmed & Persisted in MongoDB
  */
-export default function ResumeUpload() {
+export default function ResumeUpload({ authUser }) {
   const [stage, setStage] = useState('upload');
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
@@ -51,7 +51,7 @@ export default function ResumeUpload() {
   const [anchorsData, setAnchorsData] = useState(null);
 
   const [formData, setFormData] = useState({
-    userId: '66d0c7f29a34bc123456789a',
+    userId: authUser?._id || authUser?.id || '',
     fullName: '',
     rollNumber: '',
     branch: '',
@@ -146,7 +146,7 @@ export default function ResumeUpload() {
 
       // Populate Form State
       setFormData({
-        userId: formData.userId || '66d0c7f29a34bc123456789a',
+        userId: formData.userId,
         fullName: ex.fullName || '',
         rollNumber: ex.rollNumber || 'CS' + Math.floor(100000 + Math.random() * 900000),
         branch: ex.branch || 'Computer Science and Engineering',
@@ -273,7 +273,7 @@ export default function ResumeUpload() {
     }
     setErrorMessage('');
     setFormData({
-      userId: '66d0c7f29a34bc123456789a',
+      userId: formData.userId,
       fullName: manualFields.fullName.trim(),
       rollNumber: manualFields.rollNumber.trim(),
       branch: manualFields.branch.trim(),

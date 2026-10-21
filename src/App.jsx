@@ -9,6 +9,7 @@ export default function App() {
   const [authUser, setAuthUser] = useState(null);
   const [authToken, setAuthToken] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [currentPath, setCurrentPath] = useState(window.location.pathname);
 
   // On mount: restore auth from localStorage (remember-me)
   useEffect(() => {
@@ -26,11 +27,21 @@ export default function App() {
     setAuthChecked(true);
   }, []);
 
-  const handleAuthSuccess = (user, token) => {
+  const navigate = (path) => {
+    window.history.pushState({}, '', path);
+    setCurrentPath(path);
+  };
+
+  const handleAuthSuccess = (user, token, isNewAccount = false) => {
     setAuthUser(user);
     setAuthToken(token);
     // Persist if remember-me was set (AuthPage sets this in localStorage already)
     localStorage.setItem('trusthire_user', JSON.stringify(user));
+
+    const destination = isNewAccount && user.role === 'student'
+      ? '/resume-upload'
+      : user.role === 'student' ? '/dashboard/student' : '/dashboard/admin';
+    navigate(destination);
   };
 
   const handleLogout = async () => {
@@ -44,6 +55,7 @@ export default function App() {
     localStorage.removeItem('trusthire_user');
     setAuthUser(null);
     setAuthToken(null);
+    navigate('/');
   };
 
   // Don't flash before we've checked stored auth
@@ -54,12 +66,12 @@ export default function App() {
     return <AuthPage onAuthSuccess={handleAuthSuccess} />;
   }
 
-  if (window.location.pathname === '/dashboard/student') {
-    return <StudentDashboard user={authUser} />;
+  if (currentPath === '/dashboard/student') {
+    return <StudentDashboard user={authUser} onNavigate={navigate} onLogout={handleLogout} />;
   }
 
-  if (window.location.pathname === '/dashboard/admin') {
-    return <AdminDashboard user={authUser} />;
+  if (currentPath === '/dashboard/admin') {
+    return <AdminDashboard user={authUser} onNavigate={navigate} onLogout={handleLogout} />;
   }
 
   // ── Authenticated: Show Main App ───────────────────────────────────────────
@@ -110,6 +122,25 @@ export default function App() {
               }}>Verified Talent Intelligence</div>
             </div>
           </div>
+
+          <nav aria-label="Main navigation" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+            <a
+              href={authUser.role === 'student' ? '/dashboard/student' : '/dashboard/admin'}
+              onClick={(event) => { event.preventDefault(); navigate(authUser.role === 'student' ? '/dashboard/student' : '/dashboard/admin'); }}
+              style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.8rem', fontWeight: 600 }}
+            >
+              Dashboard
+            </a>
+            {authUser.role === 'student' && (
+              <a
+                href="/resume-upload"
+                onClick={(event) => { event.preventDefault(); navigate('/resume-upload'); }}
+                style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.8rem', fontWeight: 600 }}
+              >
+                Upload Resume
+              </a>
+            )}
+          </nav>
 
           {/* User pill + logout */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

@@ -172,7 +172,7 @@ export default function AuthPage({ onAuthSuccess }) {
       if (!ok) return showToast(data.message || 'Login failed.');
       if (rememberMe) localStorage.setItem('trusthire_token', data.token);
       showToast('Welcome back! Redirecting…', 'success');
-      setTimeout(() => onAuthSuccess?.(data.user, data.token), 1200);
+      setTimeout(() => onAuthSuccess?.(data.user, data.token, false), 1200);
     } catch {
       showToast('Network error. Please check your connection.');
     } finally {
@@ -199,7 +199,7 @@ export default function AuthPage({ onAuthSuccess }) {
       });
       if (!ok) return showToast(data.message || 'Registration failed.');
       showToast('Account created! Redirecting…', 'success');
-      setTimeout(() => onAuthSuccess?.(data.user, data.token), 1200);
+      setTimeout(() => onAuthSuccess?.(data.user, data.token, true), 1200);
     } catch {
       showToast('Network error. Please check your connection.');
     } finally {
