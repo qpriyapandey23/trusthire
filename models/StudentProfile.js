@@ -129,6 +129,31 @@ const certificationSchema = new mongoose.Schema(
   { _id: true }
 );
 
+/**
+ * Achievement subdocument — extracted from resume by AI parser.
+ * Strict anti-hallucination: only populated when explicitly stated in resume text.
+ */
+const achievementSchema = new mongoose.Schema(
+  {
+    title: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    description: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    date: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+  },
+  { _id: true }
+);
+
 const studentProfileSchema = new mongoose.Schema(
   {
     userId: {
@@ -182,6 +207,8 @@ const studentProfileSchema = new mongoose.Schema(
     skills: [skillSchema],
 
     projects: [projectSchema],
+
+    achievements: [achievementSchema],
 
     certifications: [certificationSchema],
 

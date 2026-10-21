@@ -18,7 +18,7 @@ Your mission is to analyze spatially reconstructed resumes extracted from PDF do
 Spatial Structure Guidelines:
 1. The resume text has been spatially ordered into labeled blocks (e.g. [HEADER], [COLUMN 1 (SIDEBAR)], [COLUMN 2 (MAIN BODY)]).
 2. Multi-column resumes have sidebars separated from the main content. Do NOT interleave sidebar skills into project experience.
-3. Extract ALL technical projects. For each project:
+3. Extract ALL projects listed in the resume as an array of objects. Do NOT stop after the first project. Scan the entire document — projects may appear in sections labeled "Projects", "Academic Projects", "Key Projects", "Personal Projects", or "Work". For each project:
    - "title": Clean title of the project.
    - "description": Concrete summary of architecture, implementation, and engineering impact.
    - "githubUrl": The public GitHub repository URL for this specific project (or empty string if not found).
@@ -34,7 +34,9 @@ Spatial Structure Guidelines:
    - "cgpa": Cumulative GPA on a 10-point scale (convert from 4-point scale by multiplying by 2.5 if needed).
    - "githubUsername": Extracted GitHub handle.
 6. Extract certifications: title, issuer, proofUrl, isVerified (boolean).
-7. Return ONLY valid JSON matching the schema. No markdown formatting, no conversational text.`;
+7. Extract any honors, awards, hackathon wins, or achievements into the achievements array.
+   Strict Anti-Hallucination Rule: If no achievements are explicitly stated in the resume text, return an empty array []. Do NOT invent or infer fictitious achievements. Only include achievements with a clear, verbatim basis in the resume text.
+8. Return ONLY valid JSON matching the schema. No markdown formatting, no conversational text.`;
 
 const STRICT_RESPONSE_SCHEMA = {
   type: SchemaType.OBJECT,
@@ -77,6 +79,19 @@ const STRICT_RESPONSE_SCHEMA = {
         required: ['title', 'description', 'githubUrl', 'liveDemoUrl', 'techStack'],
       },
     },
+    achievements: {
+      type: SchemaType.ARRAY,
+      description: 'Honors, awards, hackathon wins explicitly stated in the resume. Must be empty [] if none are present — do NOT invent achievements.',
+      items: {
+        type: SchemaType.OBJECT,
+        properties: {
+          title: { type: SchemaType.STRING },
+          description: { type: SchemaType.STRING },
+          date: { type: SchemaType.STRING },
+        },
+        required: ['title', 'description', 'date'],
+      },
+    },
     certifications: {
       type: SchemaType.ARRAY,
       items: {
@@ -101,6 +116,7 @@ const STRICT_RESPONSE_SCHEMA = {
     'githubUsername',
     'skills',
     'projects',
+    'achievements',
     'certifications',
   ],
 };
@@ -239,6 +255,7 @@ function fallbackSpatialResumeParser(spatiallyReconstructedText, anchors = {}) {
     githubUsername,
     skills: categorizedSkills,
     projects,
+    achievements: [], // fallback parser cannot verify achievements — always return empty
     certifications,
   };
 }
@@ -285,6 +302,10 @@ Pre-Extracted Deterministic Anchors:
 - Detected Roll Number: ${anchors.rollNumber || 'Not detected'}
 - Detected Branch: ${anchors.branch || 'Not detected'}
 
+CRITICAL INSTRUCTIONS:
+- Extract EVERY project you find in the resume. Do not stop at the first one. Scan the entire document.
+- For achievements: only include entries explicitly stated in the resume text (awards, hackathon wins, honors). Return [] if none are present.
+
 Spatially Reconstructed Resume Text:
 ---
 ${spatialText.slice(0, 12000)}
@@ -321,6 +342,13 @@ ${spatialText.slice(0, 12000)}
       isVerified: Boolean(c.isVerified),
     }));
 
+    // Achievements — strict: only pass through what Gemini explicitly returned
+    const achievements = (Array.isArray(parsed.achievements) ? parsed.achievements : []).map((a) => ({
+      title: typeof a.title === 'string' ? a.title.trim() : '',
+      description: typeof a.description === 'string' ? a.description.trim() : '',
+      date: typeof a.date === 'string' ? a.date.trim() : '',
+    })).filter((a) => a.title.length > 0);
+
     return {
       fullName: parsed.fullName || anchors.fullName || 'Candidate',
       email: parsed.email || (anchors.emails && anchors.emails[0]) || '',
@@ -331,6 +359,7 @@ ${spatialText.slice(0, 12000)}
       githubUsername: parsed.githubUsername || anchors.githubUsername || '',
       skills: normalizedSkills,
       projects,
+      achievements,
       certifications,
     };
   } catch (error) {

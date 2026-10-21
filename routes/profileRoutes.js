@@ -3,9 +3,12 @@ const router = express.Router();
 const multer = require('multer');
 const mongoose = require('mongoose');
 
+const { protect } = require('../middleware/authMiddleware');
+
 const StudentProfile = require('../models/StudentProfile');
 const ScoreBoosterTask = require('../models/ScoreBoosterTask');
 const ScoreHistory = require('../models/ScoreHistory');
+require('../models/College'); // Register College model in mongoose to avoid MissingSchemaError
 
 const { parseResumeWithAI } = require('../services/aiParsingService');
 
@@ -110,6 +113,13 @@ function formatStudentData(data) {
     data.certifications
   );
 
+  // Normalize achievements — only keep entries with a non-empty title
+  const formattedAchievements = (Array.isArray(data.achievements) ? data.achievements : []).map((a) => ({
+    title: (a.title || '').trim(),
+    description: (a.description || '').trim(),
+    date: (a.date || '').trim(),
+  })).filter((a) => a.title.length > 0);
+
   const scoreCalculation = calculateInitialScore({
     cgpa: data.cgpa,
     projects: formattedProjects,
@@ -144,6 +154,7 @@ function formatStudentData(data) {
 
     skills: formattedSkills,
     projects: formattedProjects,
+    achievements: formattedAchievements,
     certifications: formattedCertifications,
 
     verificationScore: scoreCalculation.verificationScore,
@@ -412,8 +423,7 @@ router.get('/user/:userId', async (req, res) => {
       userId: new mongoose.Types.ObjectId(userId),
     })
       .sort({ createdAt: -1 })
-      .populate('userId', 'name email role')
-      .populate('collegeId', 'name code eligibilityCutoffScore');
+      .populate('userId', 'name email role');
 
     if (!profile) {
       return res.status(404).json({
@@ -446,6 +456,167 @@ router.get('/user/:userId', async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to retrieve student profile.',
+      error: error.message,
+    });
+  }
+});
+
+// --------------------------------------------------
+// ROUTE 5: STUDENT DASHBOARD — LIVE DATA
+// GET /api/student/dashboard
+// Protected: requires valid JWT in Authorization header or cookie
+// --------------------------------------------------
+
+router.get('/student/dashboard', protect, async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    // Fetch the most recent StudentProfile for the logged-in student
+    const profile = await StudentProfile.findOne({ userId })
+      .sort({ createdAt: -1 })
+      .populate('userId', 'name email role');
+
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        message: 'No resume profile found. Please upload your resume first.',
+      });
+    }
+
+    // ── Dynamic Skill Percentage Derivation ──────────────────────────────────
+    // Compute each skill's verification strength based on project tech stack coverage
+    // and individual confidenceScore from AI parser.
+    const allProjectTech = new Set(
+      (profile.projects || []).flatMap((p) =>
+        (p.techStack || []).map((t) => t.toLowerCase().trim())
+      )
+    );
+
+    const verifiedSkills = (profile.skills || []).map((skill) => {
+      const inProject = allProjectTech.has(skill.name.toLowerCase().trim());
+      // Base: confidenceScore (0-100). Boost +15 if skill appears in actual project tech stack.
+      const rawPct = Math.min(100, (skill.confidenceScore || 50) + (inProject ? 15 : 0));
+      return {
+        name: skill.name,
+        category: skill.category,
+        verifiedStatus: skill.verifiedStatus,
+        percentage: rawPct,
+      };
+    }).sort((a, b) => b.percentage - a.percentage);
+
+    // ── Dynamic Score Booster Tasks ──────────────────────────────────────────
+    // Generate tasks based on actual missing fields in DB records,
+    // rather than relying only on stored ScoreBoosterTask documents.
+    const dynamicBoosters = [];
+
+    (profile.projects || []).forEach((project) => {
+      if (!project.liveDemoUrl || !project.liveDemoUrl.startsWith('http')) {
+        dynamicBoosters.push({
+          id: `live-${project._id}`,
+          points: 8,
+          title: `Add live URL for "${project.title}"`,
+          action: 'Add URL',
+          category: 'deployment',
+          placeholder: 'https://your-project.vercel.app',
+        });
+      }
+      if (!project.githubUrl || !project.githubUrl.includes('github.com')) {
+        dynamicBoosters.push({
+          id: `github-${project._id}`,
+          points: 12,
+          title: `Link GitHub repo for "${project.title}"`,
+          action: 'Link Repo',
+          category: 'github',
+          placeholder: 'https://github.com/your-username/project',
+        });
+      }
+    });
+
+    const unverifiedSkills = (profile.skills || []).filter(
+      (s) => s.verifiedStatus === 'Pending' || s.verifiedStatus === 'Unverified'
+    );
+    if (unverifiedSkills.length > 0) {
+      dynamicBoosters.push({
+        id: 'verify-skills',
+        points: 8,
+        title: `Verify ${unverifiedSkills.slice(0, 3).map((s) => s.name).join(', ')} via GitHub`,
+        action: 'Start Verification',
+        category: 'evidence',
+        placeholder: 'Commit code using these technologies',
+      });
+    }
+
+    const certsWithoutProof = (profile.certifications || []).filter((c) => !c.proofUrl);
+    if (certsWithoutProof.length > 0) {
+      dynamicBoosters.push({
+        id: `cert-${certsWithoutProof[0]._id}`,
+        points: 5,
+        title: `Add credential link for "${certsWithoutProof[0].title}"`,
+        action: 'Add Link',
+        category: 'certification',
+        placeholder: 'https://www.credly.com/badges/...',
+      });
+    }
+
+    // Also include stored (manually saved) booster tasks not already covered
+    const storedTasks = await ScoreBoosterTask.find({
+      studentProfileId: profile._id,
+      status: 'Pending',
+    }).sort({ potentialScoreGain: -1 }).limit(5);
+
+    // ── College name resolution (hardcoded default as college module is not live yet) ──
+    const collegeName = req.user?.college || 'VIT Vellore';
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        // Identity
+        name: profile.userId?.name || req.user.name || '',
+        email: profile.userId?.email || req.user.email || '',
+        avatarInitials: (profile.userId?.name || req.user.name || 'U').slice(0, 2).toUpperCase(),
+
+        // Academic
+        branch: profile.branch || '',
+        graduationYear: profile.graduationYear || null,
+        cgpa: profile.cgpa || null,
+        college: collegeName,
+        rollNumber: profile.rollNumber || '',
+        githubUsername: profile.githubUsername || '',
+
+        // Score
+        verificationScore: profile.verificationScore || 0,
+        scoreBreakdown: profile.scoreBreakdown || {},
+
+        // Content
+        skills: verifiedSkills,
+        projects: (profile.projects || []).map((p) => ({
+          _id: p._id,
+          title: p.title,
+          description: p.description,
+          githubUrl: p.githubUrl,
+          liveDemoUrl: p.liveDemoUrl,
+          techStack: p.techStack,
+          githubAudit: p.githubAudit,
+          liveDemoAudit: p.liveDemoAudit,
+        })),
+        achievements: profile.achievements || [],
+        certifications: profile.certifications || [],
+
+        // Score Boosters (dynamic + stored, deduped by priority)
+        scoreBoosterTasks: dynamicBoosters,
+        storedBoosterTasks: storedTasks,
+
+        // Meta
+        profileId: profile._id,
+        resumeFileName: profile.resumeFileName || '',
+        lastUpdated: profile.updatedAt,
+      },
+    });
+  } catch (error) {
+    console.error('[Student Dashboard Error]', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to load student dashboard.',
       error: error.message,
     });
   }

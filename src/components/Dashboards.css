@@ -2,3 +2,45 @@
 @media(max-width:1000px){.candidate-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.student-grid{grid-template-columns:1fr}.student-side{display:grid;grid-template-columns:1fr 1fr}.admin-layout{grid-template-columns:210px 1fr}}
 @media(max-width:700px){.dash-topbar{padding:0 16px}.dash-user>span:not(.dash-avatar),.dash-home{display:none}.student-content,.admin-content{padding:25px 16px 45px}.student-hero{padding:25px 20px;align-items:flex-start;flex-direction:column;gap:25px}.score-ring{width:90px;height:90px}.score-ring strong{font-size:1.7rem}.student-hero h1{font-size:1.25rem}.resume-cta{text-align:left}.student-side{display:flex}.admin-title-row,.admin-toolbar{align-items:flex-start;flex-direction:column;gap:17px}.admin-title-row h1{font-size:1.6rem}.search-box{width:100%}.toolbar-right{width:100%;justify-content:space-between}.admin-layout{display:block}.filter-panel{margin-bottom:20px}.candidate-grid{grid-template-columns:1fr 1fr}.list-view .candidate-card{display:block}.list-view .candidate-card-top{margin-bottom:15px}.list-view .candidate-skills{margin:14px 0;width:auto}.list-view .candidate-footer{padding-top:12px;border-top:1px solid #edf0f4}.booster-item{align-items:flex-start;flex-wrap:wrap}.booster-copy{min-width:calc(100% - 60px)}.booster-item .outline-button,.completed-label{margin-left:52px}}
 @media(max-width:430px){.candidate-grid{grid-template-columns:1fr}.student-hero{border-radius:14px}.score-wrap{gap:17px}.student-grid{gap:15px}.dashboard-card,.boosters-card{padding:20px}}
+
+/* ── Live-data states ─────────────────────────────────────────────────── */
+.db-loading-state,.db-error-state,.db-empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;min-height:400px;text-align:center;color:#8491a4;font-size:.9rem}
+.db-loading-state p,.db-error-state p,.db-empty-state p{color:#8491a4;font-size:.85rem;max-width:380px;line-height:1.6}
+.db-error-state svg{color:#e05a3a}
+.db-empty-state{gap:14px}
+.db-empty-icon{font-size:2.8rem;line-height:1}
+.db-empty-state h2{font-size:1.25rem;color:#172942;margin:0}
+.db-spinner{animation:db-spin 1s linear infinite;color:#2463eb}
+@keyframes db-spin{to{transform:rotate(360deg)}}
+
+/* ── Achievements card ────────────────────────────────────────────────── */
+.achievements-card{}
+.achievement-list{display:flex;flex-direction:column;gap:14px;margin-top:6px}
+.achievement-item{display:flex;align-items:flex-start;gap:11px}
+.achievement-icon{color:#df981c;flex:none;margin-top:2px}
+.achievement-item strong{display:block;font-size:.82rem;color:#26384f}
+.achievement-date{display:block;font-size:.67rem;color:#94a0b2;margin-top:2px}
+.achievement-desc{font-size:.75rem;color:#6a7b91;margin-top:5px;line-height:1.5}
+
+/* ── Projects grid ────────────────────────────────────────────────────── */
+.projects-section{margin-top:20px}
+.projects-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin-top:16px}
+.project-card{background:#f7faff;border:1px solid #e4edf8;border-radius:12px;padding:18px;transition:box-shadow .18s}
+.project-card:hover{box-shadow:0 6px 18px #2463eb12}
+.project-card h3{font-size:.9rem;color:#172942;margin-bottom:8px}
+.project-desc{font-size:.74rem;color:#6a7b91;line-height:1.55;margin-bottom:10px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.project-tech{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px}
+.project-tech span{background:#e8f1ff;color:#2463eb;border-radius:4px;padding:3px 7px;font-size:.62rem;font-weight:600}
+.project-links{display:flex;gap:10px;align-items:center}
+.project-links a{display:inline-flex;align-items:center;gap:4px;font-size:.72rem;font-weight:600;color:#2463eb;text-decoration:none}
+.project-links a:hover{text-decoration:underline}
+.project-no-links{font-size:.72rem;color:#b0bbc8}
+
+/* ── Misc new elements ────────────────────────────────────────────────── */
+.skill-verified-badge{color:#22a06b;font-size:.62rem;font-weight:800;margin-left:4px;vertical-align:middle}
+.db-missing{color:#c0cad8;font-weight:400}
+.db-no-data{font-size:.78rem;color:#94a0b2;padding:10px 0}
+.db-boosters-complete{display:flex;flex-direction:column;align-items:center;gap:8px;padding:30px 0;color:#22a06b;font-size:.82rem;text-align:center}
+.db-boosters-complete svg{color:#22a06b}
+.db-boosters-complete p{color:#718097;margin:0}
+
